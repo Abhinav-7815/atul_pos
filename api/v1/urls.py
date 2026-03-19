@@ -24,8 +24,9 @@ urlpatterns = [
     path('analytics/', include('apps.analytics.urls')),
     path('staff/', include('apps.staff.urls')),
     path('inventory/', include('apps.inventory.urls')),
-    path('customers/', include('apps.customers.urls')),
-    
+    path('customers/',    include('apps.customers.urls')),
+    path('distribution/', include('apps.distribution.urls')),
+
     # Auth Endpoints
     path('auth/login/', LoginView.as_view(), name='auth_login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

@@ -28,7 +28,7 @@ const UNIT_OPTIONS = [
 
 const getDefaultUnit = () => UNIT_OPTIONS[0];
 
-export default function POS() {
+export default function POS({ user }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -817,138 +817,255 @@ export default function POS() {
       </AnimatePresence>
       
       <main className={cn("flex-1 flex flex-col min-w-0 transition-all duration-700", step!=='select' && "blur-2xl scale-[0.98] opacity-50")}>
-        {/* Header */}
-        <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 z-30">
-           <div className="flex items-center gap-3">
-              <div className="size-9 bg-atul-pink_primary rounded-xl flex items-center justify-center text-white">
-                 <MI name="storefront" className="text-lg" fill />
-              </div>
-              <div>
-                 <h1 className="text-[15px] font-extrabold font-heading tracking-tight leading-none text-atul-charcoal">Atul Ice Cream</h1>
-                 <p className="text-[9px] font-semibold text-atul-gray/50 mt-0.5">Vastrapur Outlet • POS Terminal</p>
-              </div>
-           </div>
+        {/* ── Header ── */}
+        <header className="flex items-center justify-between px-5 py-2.5 bg-white border-b border-gray-100/80 z-30 gap-4">
 
-           <div className="flex-1 max-w-md mx-8">
-              <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-atul-gray/30 size-4 group-focus-within:text-atul-pink_primary transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Search products, codes..." 
-                  value={searchQuery} 
-                  onChange={e=>setSearchQuery(e.target.value)}
-                  className="w-full bg-gray-50 rounded-xl py-2.5 pl-11 pr-5 text-sm font-medium border border-gray-100 focus:border-atul-pink_primary/30 focus:bg-white focus:ring-2 focus:ring-atul-pink_primary/5 transition-all outline-none placeholder:text-atul-gray/30" 
-                />
-              </div>
-           </div>
+          {/* Brand + Outlet */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="size-9 bg-atul-pink_primary rounded-xl flex items-center justify-center text-white shadow-sm shadow-atul-pink_primary/30">
+              <MI name="icecream" className="text-[18px]" fill />
+            </div>
+            <div>
+              <h1 className="text-[14px] font-black font-heading tracking-tight leading-none text-atul-charcoal">
+                Atul Ice Cream
+              </h1>
+              <p className="text-[9px] font-bold text-atul-gray/40 mt-0.5 uppercase tracking-widest leading-none">
+                {user?.outlet_name || 'Main Outlet'} &bull; POS
+              </p>
+            </div>
+          </div>
 
-           <div className="flex items-center gap-4">
-              {syncing && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg animate-pulse">
-                  <Loader2 size={12} className="animate-spin"/>
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Syncing</span>
-                </div>
+          {/* Search */}
+          <div className="flex-1 max-w-md">
+            <div className="relative group">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-atul-gray/30 size-3.5 group-focus-within:text-atul-pink_primary transition-colors" />
+              <input
+                type="text"
+                placeholder="Search products, codes…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-[#F8F9FA] rounded-xl py-2.5 pl-10 pr-4 text-[13px] font-medium border border-gray-100 focus:border-atul-pink_primary/30 focus:bg-white focus:ring-2 focus:ring-atul-pink_primary/5 transition-all outline-none placeholder:text-atul-gray/25"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-atul-gray/30 hover:text-atul-pink_primary transition-colors">
+                  <X size={13} />
+                </button>
               )}
-              {!isOnline && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-lg">
-                  <MI name="cloud_off" className="text-sm"/>
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Offline Mode</span>
-                </div>
-              )}
-              <div className="text-right pr-4 border-r border-gray-100">
-                 <div className="text-sm font-bold text-atul-charcoal tabular-nums leading-none font-mono">
-                   {currentTime.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit', hour12: true})}
-                 </div>
-                 <div className="text-[10px] text-atul-gray/50 font-medium mt-0.5">
-                   {currentTime.toLocaleDateString('en-US', {day:'2-digit', month:'short', year:'numeric'})}
-                 </div>
+            </div>
+          </div>
+
+          {/* Right controls */}
+          <div className="flex items-center gap-3 shrink-0">
+
+            {/* Status chips */}
+            {syncing && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-500 rounded-lg">
+                <Loader2 size={11} className="animate-spin" />
+                <span className="text-[9px] font-black uppercase tracking-wider">Syncing</span>
               </div>
-              <button 
-                onClick={() => setIsHoldingModalOpen(true)}
-                className="size-9 rounded-xl bg-atul-charcoal text-white hover:bg-black active:scale-95 transition-all cursor-pointer flex items-center justify-center relative">
-                <History size={16}/>
+            )}
+            {!isOnline && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-500 rounded-lg border border-amber-100">
+                <MI name="cloud_off" className="text-xs" />
+                <span className="text-[9px] font-black uppercase tracking-wider">Offline</span>
+              </div>
+            )}
+
+            {/* Clock */}
+            <div className="text-right pl-3 border-l border-gray-100">
+              <div className="text-[13px] font-black text-atul-charcoal tabular-nums leading-none font-mono tracking-tight">
+                {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+              </div>
+              <div className="text-[9px] text-atul-gray/40 font-bold mt-0.5 uppercase tracking-wide">
+                {currentTime.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+
+            {/* Cashier avatar */}
+            {user && (
+              <img
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'User')}&background=D63384&color=fff&bold=true&size=64`}
+                className="size-8 rounded-xl object-cover border-2 border-atul-pink_soft shadow-sm"
+                alt={user.full_name}
+                title={`${user.full_name} · ${user.role}`}
+              />
+            )}
+
+            {/* Hold orders button */}
+            <button
+              onClick={() => setIsHoldingModalOpen(true)}
+              className="size-9 rounded-xl bg-atul-charcoal text-white hover:bg-black active:scale-95 transition-all cursor-pointer flex items-center justify-center relative shadow-sm"
+            >
+              <History size={15} />
+              <AnimatePresence>
                 {heldOrders.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-atul-pink_primary text-white size-4 rounded-full flex items-center justify-center text-[8px] font-bold border-2 border-white">
+                  <motion.span
+                    key="hold-badge"
+                    initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}
+                    className="absolute -top-1 -right-1 bg-atul-pink_primary text-white size-4 rounded-full flex items-center justify-center text-[8px] font-black border-2 border-white"
+                  >
                     {heldOrders.length}
-                  </span>
+                  </motion.span>
                 )}
-              </button>
-           </div>
+              </AnimatePresence>
+            </button>
+          </div>
         </header>
 
-        {/* Categories */}
-        <div className="flex items-center px-6 py-2.5 overflow-x-auto scrollbar-none bg-white/60 gap-2 border-b border-gray-100">
-          {categories.map(cat => (
-            <button key={cat.id} onClick={() => handleCategorySelect(cat.id)}
-              className={cn("flex items-center gap-2 px-4 py-2 rounded-xl min-w-fit transition-all text-xs font-semibold cursor-pointer border",
-                selectedCategory === cat.id ? "bg-atul-pink_primary text-white border-atul-pink_primary shadow-md shadow-atul-pink_primary/20" : "bg-white text-atul-gray/60 border-gray-100 hover:border-atul-pink_primary/30 hover:text-atul-pink_primary")}>
-              {cat.icon_emoji && <span className="text-sm">{cat.icon_emoji}</span>}
-              {cat.name}
-            </button>
-          ))}
+        {/* ── Category Bar ── */}
+        <div className="flex items-center px-5 py-2 overflow-x-auto scrollbar-none bg-white gap-1.5 border-b border-gray-100/80 shrink-0">
+          {categories.map(cat => {
+            const isActive = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => handleCategorySelect(cat.id)}
+                className={cn(
+                  "relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl min-w-fit transition-all text-[12px] font-bold cursor-pointer whitespace-nowrap",
+                  isActive
+                    ? "bg-atul-pink_primary text-white shadow-md shadow-atul-pink_primary/25"
+                    : "text-atul-gray/50 hover:text-atul-pink_primary hover:bg-atul-pink_primary/5"
+                )}
+              >
+                {cat.icon_emoji && (
+                  <span className={cn("text-sm leading-none transition-all", isActive ? "grayscale-0" : "grayscale opacity-60")}>
+                    {cat.icon_emoji}
+                  </span>
+                )}
+                {cat.name}
+                {isActive && (
+                  <motion.span
+                    layoutId="cat-indicator"
+                    className="absolute inset-0 rounded-xl bg-atul-pink_primary -z-10"
+                    transition={{ type: 'spring', damping: 22, stiffness: 250 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Product Grid */}
-        <div className="flex-1 overflow-y-auto px-6 pt-5 pb-6 custom-scrollbar">
+        {/* ── Product Grid ── */}
+        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-5 custom-scrollbar bg-[#F8F9FA]">
+
+          {/* Section label */}
+          {!loading && filteredProducts.length > 0 && !searchQuery && (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.3em]">
+                {filteredProducts.length} items
+              </p>
+            </div>
+          )}
+
           {loading ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20">
-               <Loader2 className="animate-spin size-7 mb-2" strokeWidth={2}/>
-               <span className="text-xs font-medium text-atul-gray">Loading products...</span>
+            <div className="h-full flex flex-col items-center justify-center gap-3 opacity-30">
+              <Loader2 className="animate-spin size-8" strokeWidth={1.5} />
+              <span className="text-[11px] font-bold text-atul-gray uppercase tracking-widest">Loading…</span>
             </div>
           ) : filteredProducts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20">
-               <MI name="search_off" className="text-4xl mb-2"/>
-               <span className="text-xs font-medium text-atul-gray">No products found</span>
+            <div className="h-full flex flex-col items-center justify-center gap-3 opacity-25">
+              <MI name="search_off" className="text-5xl text-atul-charcoal" />
+              <span className="text-sm font-bold text-atul-gray">No products found</span>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
               {filteredProducts.map(p => {
                 const count = getCartItemCount(p.id);
+                const inCart = count > 0;
+
                 const getProductImage = (product) => {
                   if (product.image_url) return product.image_url;
                   const n = product.name.toUpperCase();
                   if (n.includes('CHOCOLATE')) return "https://images.unsplash.com/photo-1558500204-9110ca213444?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('MANGO')) return "https://images.unsplash.com/photo-1563805039227-9aba624c3017?q=80&w=240&auto=format&fit=crop";
+                  if (n.includes('MANGO'))     return "https://images.unsplash.com/photo-1563805039227-9aba624c3017?q=80&w=240&auto=format&fit=crop";
                   if (n.includes('PISTA') || n.includes('RAJBHA') || n.includes('KESAR')) return "https://images.unsplash.com/photo-1501443762994-82bd5dabb89a?q=80&w=240&auto=format&fit=crop";
                   if (n.includes('VANILLA') || n.includes('COCONUT')) return "https://images.unsplash.com/photo-1534353436294-0dbd4bdac845?q=80&w=240&auto=format&fit=crop";
                   if (n.includes('STRAWBERRY')) return "https://images.unsplash.com/photo-1570197788417-0e82375c9371?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('BUTTER')) return "https://images.unsplash.com/photo-1633933358116-a27b902fad35?q=80&w=240&auto=format&fit=crop";
+                  if (n.includes('BUTTER'))    return "https://images.unsplash.com/photo-1633933358116-a27b902fad35?q=80&w=240&auto=format&fit=crop";
                   return "https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?q=80&w=240&auto=format&fit=crop";
-                }
+                };
 
                 return (
-                  <motion.div key={p.id} layout whileTap={count > 0 ? {} : {scale:0.97}} onClick={()=>handleProductClick(p)}
-                    className={cn("group flex flex-col bg-white rounded-2xl overflow-hidden transition-all border select-none shadow-sm",
-                      count > 0 ? "border-atul-pink_primary border-2 cursor-default ring-4 ring-atul-pink_primary/5 shadow-xl" : "border-gray-100 hover:border-atul-pink_primary/20 cursor-pointer hover:shadow-lg")}>
-                    
-                    {/* Image */}
+                  <motion.div
+                    key={p.id}
+                    layout
+                    whileTap={inCart ? {} : { scale: 0.96 }}
+                    onClick={() => handleProductClick(p)}
+                    className={cn(
+                      "group flex flex-col bg-white rounded-2xl overflow-hidden transition-all border select-none",
+                      inCart
+                        ? "border-atul-pink_primary/50 border-2 cursor-default shadow-lg shadow-atul-pink_primary/10 ring-4 ring-atul-pink_primary/5"
+                        : "border-gray-100 hover:border-atul-pink_primary/25 cursor-pointer hover:shadow-lg hover:-translate-y-0.5"
+                    )}
+                  >
+                    {/* Product image */}
                     <div className="relative w-full aspect-square overflow-hidden bg-gray-50">
-                       <img src={getProductImage(p)} alt={p.name} loading="lazy" className={cn("w-full h-full object-cover transition-all duration-500", count > 0 ? "scale-105 saturate-[0.2] opacity-40 blur-[1px]" : "group-hover:scale-105")} />
-                       {count > 0 && (
-                         <motion.div initial={{scale:0.5, opacity:0}} animate={{scale:1, opacity:1}}
-                           className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-atul-pink_primary/10">
-                           <div className="size-12 bg-atul-pink_primary text-white rounded-full flex items-center justify-center shadow-lg shadow-atul-pink_primary/30">
-                              <Check size={28} strokeWidth={4}/>
-                           </div>
-                           <span className="bg-white/90 backdrop-blur-md text-atul-pink_primary px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm">Selected ×{count}</span>
-                         </motion.div>
-                       )}
+                      <img
+                        src={getProductImage(p)}
+                        alt={p.name}
+                        loading="lazy"
+                        className={cn(
+                          "w-full h-full object-cover transition-all duration-500",
+                          inCart ? "scale-105 saturate-[0.15] opacity-35" : "group-hover:scale-[1.06]"
+                        )}
+                      />
+
+                      {/* Veg / Non-veg badge — top-left */}
+                      <div className={cn(
+                        "absolute top-2 left-2 size-4 rounded border-2 flex items-center justify-center bg-white/90 backdrop-blur-sm",
+                        p.is_veg ? "border-emerald-500" : "border-red-400"
+                      )}>
+                        <div className={cn("size-2 rounded-full", p.is_veg ? "bg-emerald-500" : "bg-red-400")} />
+                      </div>
+
+                      {/* Multi-variant indicator — top-right */}
+                      {p.variants?.length > 0 && !inCart && (
+                        <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide">
+                          {p.variants.length} sizes
+                        </div>
+                      )}
+
+                      {/* In-cart overlay */}
+                      {inCart && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-atul-pink_primary/10"
+                        >
+                          <div className="size-11 bg-atul-pink_primary text-white rounded-full flex items-center justify-center shadow-xl shadow-atul-pink_primary/40">
+                            <Check size={24} strokeWidth={3.5} />
+                          </div>
+                          <span className="bg-white/95 backdrop-blur-md text-atul-pink_primary px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm">
+                            ×{count}
+                          </span>
+                        </motion.div>
+                      )}
                     </div>
-                    
-                    {/* Info */}
-                    <div className="p-3 flex flex-col gap-1 relative overflow-hidden">
-                       {count > 0 && <div className="absolute top-0 left-0 w-1 h-full bg-atul-pink_primary" />}
-                       <div className="flex items-start justify-between gap-1">
-                          <h3 className={cn("text-[12px] font-bold leading-tight line-clamp-2 transition-colors", count > 0 ? "text-atul-pink_primary" : "text-atul-charcoal group-hover:text-atul-pink_primary")}>
-                            {p.name}
-                          </h3>
-                          <span className={cn("size-2 rounded-full mt-1 shrink-0", p.is_veg ? "bg-emerald-500" : "bg-red-500")}/>
-                       </div>
-                       <div className="flex items-baseline gap-1">
-                          <span className={cn("text-[10px] font-medium", count > 0 ? "text-atul-pink_primary/40" : "text-atul-gray/40")}>₹</span>
-                          <span className={cn("professional-digits text-[15px] font-extrabold tracking-tight", count > 0 ? "text-atul-pink_primary" : "text-atul-charcoal")}>{p.base_price}</span>
-                          {p.variants?.length > 0 && <span className="text-atul-pink_primary text-xs font-bold">+</span>}
-                       </div>
+
+                    {/* Product info */}
+                    <div className={cn(
+                      "px-3 py-2.5 flex flex-col gap-0.5 relative overflow-hidden",
+                      inCart && "bg-atul-pink_primary/[0.03]"
+                    )}>
+                      {/* Left accent when in cart */}
+                      {inCart && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-atul-pink_primary to-atul-pink_primary/30" />}
+
+                      <h3 className={cn(
+                        "text-[11.5px] font-extrabold leading-tight line-clamp-2 transition-colors pl-0.5",
+                        inCart ? "text-atul-pink_primary" : "text-atul-charcoal group-hover:text-atul-pink_primary"
+                      )}>
+                        {p.name}
+                      </h3>
+
+                      <div className="flex items-baseline gap-0.5 pl-0.5">
+                        <span className={cn("text-[9px] font-bold", inCart ? "text-atul-pink_primary/50" : "text-atul-gray/40")}>₹</span>
+                        <span className={cn("professional-digits text-[14px] font-black tracking-tight", inCart ? "text-atul-pink_primary" : "text-atul-charcoal")}>
+                          {p.base_price}
+                        </span>
+                        {p.variants?.length > 0 && (
+                          <span className="text-[9px] font-black text-atul-pink_primary/60 ml-0.5">+</span>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -957,202 +1074,402 @@ export default function POS() {
           )}
         </div>
         
-        {/* Advanced Product Manager - Horizontal Bar */}
-        {cart.length > 0 && posConfig.showAdvancedManager && (
-           <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-              className="h-[190px] bg-white border-t border-gray-100 flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.06)] z-50 overflow-hidden">
-              <div className="px-6 py-2 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
-                 <div className="flex items-center gap-2">
-                    <Weight size={12} className="text-atul-pink_primary"/>
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-atul-charcoal/80">Advanced Product Manager</span>
-                 </div>
-                 <div className="text-[9px] font-bold text-atul-gray/40 uppercase tracking-widest hidden sm:block">Manage weights & price overrides</div>
+        {/* ── Advanced Product Manager Strip ── */}
+        <AnimatePresence>
+          {cart.length > 0 && posConfig.showAdvancedManager && (
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 200 }}
+              className="shrink-0 bg-white border-t border-gray-100 shadow-[0_-12px_40px_rgba(0,0,0,0.05)] z-50 overflow-hidden"
+              style={{ height: 172 }}
+            >
+              {/* Strip header */}
+              <div className="px-5 py-1.5 flex items-center justify-between border-b border-gray-50 bg-gradient-to-r from-atul-pink_soft/10 to-transparent">
+                <div className="flex items-center gap-2">
+                  <div className="size-5 rounded-md bg-atul-pink_primary/10 flex items-center justify-center">
+                    <Weight size={11} className="text-atul-pink_primary" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-atul-charcoal/70">
+                    Advanced Manager
+                  </span>
+                  <span className="text-[9px] font-bold text-atul-gray/30 uppercase tracking-wider hidden sm:block">
+                    — weights &amp; rate overrides
+                  </span>
+                </div>
+                <span className="text-[9px] font-black text-atul-gray/25 uppercase tracking-widest">
+                  {cart.length} line{cart.length !== 1 ? 's' : ''}
+                </span>
               </div>
-              <div className="flex-1 overflow-x-auto flex items-center px-6 gap-4 custom-scrollbar-h overflow-y-hidden">
-                 <AnimatePresence mode="popLayout">
-                    {cart.map((item) => (
-                       <motion.div 
-                          key={`${item.product.id}-${item.variant?.id}-${(item.modifiers||[]).map(m=>m.id).join('-')}`}
-                          initial={{ opacity: 0, scale: 0.9, x: 20 }}
-                          animate={{ opacity: 1, scale: 1, x: 0 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          className="min-w-[320px] h-[120px] bg-white rounded-2xl border border-atul-pink_soft/60 p-3.5 flex flex-col justify-between shadow-sm hover:shadow-md transition-all group relative ring-1 ring-atul-pink_soft/5"
-                       >
-                          <div className="flex justify-between items-start">
-                             <div className="flex-1 min-w-0 pr-4">
-                                <h4 className="text-[11px] font-extrabold text-atul-charcoal truncate">{item.product.name}</h4>
-                                {item.variant && <p className="text-[8px] font-bold text-atul-pink_primary uppercase tracking-tighter">{item.variant.name}</p>}
-                             </div>
-                             <button onClick={() => removeFromCart(item.product.id, item.variant?.id, item.modifiers)} className="size-5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-md flex items-center justify-center transition-all active:scale-90"><X size={10}/></button>
+
+              {/* Horizontal scrolling cards */}
+              <div className="flex items-center px-5 gap-3 overflow-x-auto custom-scrollbar-h overflow-y-hidden h-[130px]">
+                <AnimatePresence mode="popLayout">
+                  {cart.map((item) => (
+                    <motion.div
+                      key={`${item.product.id}-${item.variant?.id}-${(item.modifiers || []).map(m => m.id).join('-')}`}
+                      initial={{ opacity: 0, x: 20, scale: 0.92 }}
+                      animate={{ opacity: 1, x: 0,  scale: 1    }}
+                      exit={{    opacity: 0, x: -10, scale: 0.92 }}
+                      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+                      className="min-w-[280px] h-[108px] bg-[#FDF3F6] rounded-2xl border border-atul-pink_soft/50 p-3 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-atul-pink_primary/30 transition-all group relative"
+                    >
+                      {/* Card header */}
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1 min-w-0 pr-3">
+                          <h4 className="text-[11px] font-extrabold text-atul-charcoal truncate leading-tight">
+                            {item.product.name}
+                          </h4>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {item.variant && (
+                              <span className="text-[8px] font-black text-atul-pink_primary uppercase tracking-tight bg-atul-pink_primary/10 px-1.5 py-px rounded-md">
+                                {item.variant.name}
+                              </span>
+                            )}
+                            <span className="text-[8px] font-bold text-atul-gray/40 uppercase tracking-wide">
+                              ₹{calculateItemPrice(item).toFixed(0)} / {item.unitInfo?.label || 'Qty'}
+                            </span>
                           </div>
-                          
-                          <div className="grid grid-cols-2 gap-3 mt-1">
-                             {/* Quantity Entry */}
-                             <div className="flex flex-col gap-1">
-                                <label className="text-[7px] font-black text-atul-gray/60 uppercase tracking-widest pl-1">Quantity Entry</label>
-                                <div className="flex bg-atul-cream/40 rounded-xl p-1 items-center gap-1 border border-atul-pink_soft/30 focus-within:border-atul-pink_primary/40 transition-colors">
-                                   <input 
-                                      type="number" 
-                                      step={item.unitInfo?.step || 1}
-                                      value={item.qty} 
-                                      onChange={(e) => setExactQty(item.product.id, item.variant?.id, e.target.value, item.modifiers)}
-                                      className="w-full bg-transparent text-center font-mono font-black text-[12px] outline-none text-atul-charcoal"
-                                   />
-                                   <button 
-                                      onClick={() => cycleUnit(item.product.id, item.variant?.id, item.modifiers)}
-                                      className="px-2 py-1 bg-white rounded-lg text-[9px] font-black text-atul-pink_primary shadow-sm hover:shadow-md active:scale-95 transition-all border border-atul-pink_soft/10"
-                                   >
-                                      {item.unitInfo?.label || 'Qty'}
-                                   </button>
-                                </div>
-                             </div>
-                             
-                             {/* Rate Override */}
-                             <div className="flex flex-col gap-1">
-                                <div className="flex justify-between items-center pr-1">
-                                   <label className="text-[7px] font-black text-atul-gray/60 uppercase tracking-widest pl-1">Rate Adjustment</label>
-                                    {item.manualPrice && <span className="text-[6px] font-black text-atul-pink_primary uppercase tracking-widest">Fixed</span>}
-                                </div>
-                                <div className="flex bg-atul-cream/40 rounded-xl p-1 items-center gap-1 border border-atul-pink_soft/30 focus-within:border-atul-pink_primary/40 transition-colors">
-                                   <span className="text-[9px] font-black text-atul-pink_primary/40 pl-1 font-mono">₹</span>
-                                   <input 
-                                      type="number" 
-                                      placeholder={calculateItemPrice({...item, manualPrice: null}).toFixed(0)}
-                                      value={item.manualPrice || ''} 
-                                      onChange={(e) => setManualPrice(item.product.id, item.variant?.id, e.target.value, item.modifiers)}
-                                      className="w-full bg-transparent font-mono font-black text-[12px] outline-none text-atul-charcoal placeholder:text-atul-gray/20"
-                                   />
-                                   {item.manualPrice && (
-                                      <button onClick={() => setManualPrice(item.product.id, item.variant?.id, '', item.modifiers)} className="p-0.5 text-atul-pink_primary hover:text-atul-charcoal transition-colors"><X size={10}/></button>
-                                   )}
-                                </div>
-                             </div>
+                        </div>
+                        <button
+                          onClick={() => removeFromCart(item.product.id, item.variant?.id, item.modifiers)}
+                          className="size-5 bg-white text-red-300 hover:bg-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+
+                      {/* Inputs row */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Qty input */}
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[7px] font-black text-atul-gray/50 uppercase tracking-widest pl-1">Quantity</label>
+                          <div className="flex bg-white rounded-xl p-1 items-center gap-1 border border-atul-pink_soft/40 focus-within:border-atul-pink_primary/40 transition-colors shadow-sm">
+                            <input
+                              type="number"
+                              step={item.unitInfo?.step || 1}
+                              value={item.qty}
+                              onChange={(e) => setExactQty(item.product.id, item.variant?.id, e.target.value, item.modifiers)}
+                              className="w-full bg-transparent text-center font-mono font-black text-[12px] outline-none text-atul-charcoal [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              onClick={() => cycleUnit(item.product.id, item.variant?.id, item.modifiers)}
+                              className="px-1.5 py-0.5 bg-atul-pink_primary/10 rounded-lg text-[8px] font-black text-atul-pink_primary hover:bg-atul-pink_primary hover:text-white active:scale-95 transition-all"
+                            >
+                              {item.unitInfo?.label || 'Qty'}
+                            </button>
                           </div>
-                       </motion.div>
-                    ))}
-                 </AnimatePresence>
-                 <div className="min-w-[40px] h-full" />
+                        </div>
+
+                        {/* Rate override */}
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[7px] font-black text-atul-gray/50 uppercase tracking-widest pl-1">Rate</label>
+                            {item.manualPrice && (
+                              <span className="text-[6px] font-black text-atul-pink_primary uppercase tracking-widest bg-atul-pink_primary/10 px-1 py-px rounded">
+                                Override
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex bg-white rounded-xl p-1 items-center gap-1 border border-atul-pink_soft/40 focus-within:border-atul-pink_primary/40 transition-colors shadow-sm">
+                            <span className="text-[9px] font-black text-atul-pink_primary/50 pl-0.5 font-mono">₹</span>
+                            <input
+                              type="number"
+                              placeholder={calculateItemPrice({ ...item, manualPrice: null }).toFixed(0)}
+                              value={item.manualPrice || ''}
+                              onChange={(e) => setManualPrice(item.product.id, item.variant?.id, e.target.value, item.modifiers)}
+                              className="w-full bg-transparent font-mono font-black text-[12px] outline-none text-atul-charcoal placeholder:text-atul-gray/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            {item.manualPrice && (
+                              <button
+                                onClick={() => setManualPrice(item.product.id, item.variant?.id, '', item.modifiers)}
+                                className="p-0.5 text-atul-pink_primary/40 hover:text-red-500 transition-colors"
+                              >
+                                <X size={9} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                {/* End spacer */}
+                <div className="min-w-4 shrink-0" />
               </div>
-           </motion.div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
-      {/* Order Sidebar */}
-      <aside className="w-[320px] bg-white border-l border-gray-100 flex flex-col z-40">
-        {/* Sidebar Header */}
-        <div className="px-5 py-4 border-b border-gray-100">
-           <div className="flex justify-between items-center mb-4">
+      {/* ═══ ORDER SIDEBAR — Redesigned ═══ */}
+      <aside className="w-[320px] bg-[#FDF3F6] border-l border-atul-pink_soft/40 flex flex-col z-40 relative overflow-hidden">
+
+        {/* Decorative ambient blobs */}
+        <div className="absolute -top-10 -right-10 w-36 h-36 bg-atul-pink_primary/8 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-24 -left-8 w-28 h-28 bg-atul-pink_primary/5 rounded-full blur-2xl pointer-events-none" />
+
+        {/* ── Header ── */}
+        <div className="relative px-5 pt-5 pb-4 shrink-0">
+          {/* Title row */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "size-10 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-sm",
+                cart.length > 0
+                  ? "bg-atul-pink_primary text-white shadow-atul-pink_primary/25"
+                  : "bg-white/70 text-atul-charcoal/20 border border-white"
+              )}>
+                <ShoppingBag size={17} />
+              </div>
               <div>
-                <h2 className="text-base font-extrabold font-heading text-atul-charcoal tracking-tight">Current Order</h2>
-                <p className="text-[10px] font-medium text-atul-gray/50 mt-0.5">{totalItems} item{totalItems !== 1 ? 's' : ''} added</p>
+                <h2 className="text-[15px] font-black font-heading text-atul-charcoal tracking-tight leading-none">
+                  Current Order
+                </h2>
+                <p className="text-[10px] font-bold text-atul-gray/40 mt-0.5 uppercase tracking-widest">
+                  {totalItems > 0
+                    ? `${totalItems} item${totalItems !== 1 ? 's' : ''} added`
+                    : 'No items yet'}
+                </p>
               </div>
-              <div className="size-8 bg-atul-cream/50 rounded-lg flex items-center justify-center text-atul-charcoal/20">
-                 <ShoppingBag size={16} />
-              </div>
-           </div>
-           <div className="flex bg-gray-50 p-1 rounded-xl">
-              <button onClick={()=>setOrderType('dine_in')} className={cn("flex-1 py-2 rounded-lg text-[11px] font-semibold transition-all", orderType==='dine_in'?"bg-white text-atul-pink_primary shadow-sm":"text-atul-gray/40 hover:text-atul-charcoal")}>Dine-In</button>
-              <button onClick={()=>setOrderType('takeaway')} className={cn("flex-1 py-2 rounded-lg text-[11px] font-semibold transition-all", orderType==='takeaway'?"bg-white text-atul-pink_primary shadow-sm":"text-atul-gray/40 hover:text-atul-charcoal")}>Takeaway</button>
-           </div>
+            </div>
+            {/* Animated item-count badge */}
+            <AnimatePresence>
+              {totalItems > 0 && (
+                <motion.div
+                  key="badge"
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  className="size-8 bg-atul-pink_primary text-white rounded-full flex items-center justify-center text-[12px] font-black shadow-lg shadow-atul-pink_primary/30 border-2 border-white"
+                >
+                  {totalItems}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Order-type toggle */}
+          <div className="flex bg-white/60 backdrop-blur-sm p-1 rounded-2xl border border-white gap-1 shadow-inner">
+            {[
+              { key: 'dine_in', label: 'Dine-In',   icon: <Store size={11}/> },
+              { key: 'takeaway', label: 'Takeaway', icon: <ShoppingBag size={11}/> },
+            ].map(({ key, label, icon }) => (
+              <button
+                key={key}
+                onClick={() => setOrderType(key)}
+                className={cn(
+                  "flex-1 py-2.5 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5",
+                  orderType === key
+                    ? "bg-atul-pink_primary text-white shadow-md shadow-atul-pink_primary/30"
+                    : "text-atul-gray/40 hover:text-atul-charcoal"
+                )}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3">
-           {cart.length === 0 ? (
-             <div className="h-full flex flex-col items-center justify-center text-center">
-                <ShoppingBag size={32} className="text-gray-200 mb-3"/>
-                <p className="text-xs font-medium text-atul-gray/30">No items yet</p>
-                <p className="text-[10px] text-atul-gray/20 mt-1">Tap products to add</p>
-             </div>
-           ) : (
-             <div className="space-y-2">
+        {/* Thin divider */}
+        <div className="h-px bg-white/80 mx-5 shrink-0" />
+
+        {/* ── Cart Items ── */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 min-h-0">
+          {cart.length === 0 ? (
+            /* ── Empty state ── */
+            <div className="h-full flex flex-col items-center justify-center text-center px-4 gap-4">
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="size-20 bg-white/70 rounded-3xl flex items-center justify-center border border-white shadow-sm"
+              >
+                <ShoppingBag size={28} className="text-atul-pink_primary/20" />
+              </motion.div>
+              <div>
+                <p className="text-sm font-black text-atul-charcoal/20">Cart is empty</p>
+                <p className="text-[10px] text-atul-gray/30 mt-1 font-medium">Tap any product to start</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
                 {cart.map(item => {
                   const ui = item.unitInfo || getDefaultUnit();
                   const itemKey = `${item.product.id}-${item.variant?.id}-${(item.modifiers || []).map(m => m.id).sort().join(',')}`;
+                  const itemTotal = calculateItemPrice(item) * item.qty;
                   return (
-                  <motion.div layout key={itemKey} className="p-3 rounded-xl bg-gray-50/80 border border-gray-100 hover:border-atul-pink_primary/10 transition-all">
-                     <div className="flex justify-between items-start gap-2 mb-2">
-                        <div className="min-w-0 flex-1">
-                           <p className="text-[12px] font-bold text-atul-charcoal truncate leading-tight">{item.product.name}</p>
-                           <div className="flex flex-wrap gap-1 mt-0.5">
-                             {item.variant && <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/5 text-atul-pink_primary rounded font-bold uppercase">{item.variant.name}</span>}
-                             {item.modifiers?.map(m => (
-                               <span key={m.id} className="text-[8px] px-1.5 py-0.5 bg-gray-200/50 text-atul-charcoal/60 rounded font-bold uppercase">{m.name}</span>
-                             ))}
-                           </div>
+                    <motion.div
+                      layout
+                      key={itemKey}
+                      initial={{ opacity: 0, x: 24, scale: 0.96 }}
+                      animate={{ opacity: 1, x: 0,  scale: 1    }}
+                      exit={{    opacity: 0, x: -16, scale: 0.94 }}
+                      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+                      className="group relative bg-white rounded-2xl border border-white hover:border-atul-pink_primary/20 hover:shadow-md transition-all overflow-hidden shadow-sm"
+                    >
+                      {/* Left accent strip */}
+                      <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-gradient-to-b from-atul-pink_primary to-atul-pink_primary/40 rounded-r-full" />
+
+                      <div className="pl-4 pr-3 pt-3 pb-3">
+                        {/* Row 1: Name + Line Total */}
+                        <div className="flex justify-between items-start gap-2 mb-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <div className={cn("size-1.5 rounded-full shrink-0 mt-px", item.product.is_veg ? "bg-emerald-500" : "bg-red-400")} />
+                              <p className="text-[12.5px] font-extrabold text-atul-charcoal truncate leading-tight">
+                                {item.product.name}
+                              </p>
+                            </div>
+                            {(item.variant || item.modifiers?.length > 0) && (
+                              <div className="flex flex-wrap gap-1 mt-1.5 pl-3">
+                                {item.variant && (
+                                  <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/8 text-atul-pink_primary rounded-md font-black uppercase tracking-wide border border-atul-pink_soft/50">
+                                    {item.variant.name}
+                                  </span>
+                                )}
+                                {item.modifiers?.map(m => (
+                                  <span key={m.id} className="text-[8px] px-1.5 py-0.5 bg-gray-100 text-atul-charcoal/50 rounded-md font-bold uppercase">
+                                    {m.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Price column */}
+                          <div className="text-right shrink-0">
+                            <p className="professional-digits text-[14px] font-black text-atul-charcoal leading-tight">
+                              ₹{itemTotal.toFixed(0)}
+                            </p>
+                            {item.qty > 1 && (
+                              <p className="text-[9px] text-atul-gray/30 font-bold leading-none mt-0.5">
+                                ₹{calculateItemPrice(item).toFixed(0)} ea
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="professional-digits text-[13px] font-extrabold text-atul-charcoal shrink-0">
-                           ₹{(calculateItemPrice(item) * item.qty).toFixed(0)}
-                        </span>
-                     </div>
-                     <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-100 p-0.5">
-                           <button onClick={(e)=>{e.stopPropagation();updateQty(item.product.id,item.variant?.id,-1, item.modifiers)}} className="size-7 rounded-md flex items-center justify-center text-atul-gray/40 hover:text-atul-pink_primary hover:bg-atul-pink_soft/20 transition-all active:scale-90"><Minus size={12} strokeWidth={2.5}/></button>
-                           {ui.type === 'piece' ? (
-                             <span className="professional-digits text-[12px] font-bold w-7 text-center tabular-nums">{item.qty}</span>
-                           ) : (
-                             <input
-                               type="number"
-                               step={ui.step}
-                               min={ui.min}
-                               value={item.qty}
-                               onClick={e=>e.stopPropagation()}
-                               onChange={e=>{e.stopPropagation();setExactQty(item.product.id,item.variant?.id,e.target.value, item.modifiers)}}
-                               className="professional-digits text-[12px] font-bold w-12 text-center outline-none bg-transparent tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                             />
-                           )}
-                           <button 
-                             onClick={(e)=>{e.stopPropagation();cycleUnit(item.product.id,item.variant?.id, item.modifiers)}} 
-                             title="Click to change unit (Qty / Kg / L)"
-                             className="text-[9px] font-bold text-atul-pink_primary bg-atul-pink_primary/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-atul-pink_primary/20 transition-all select-none">
-                             {ui.label}
-                           </button>
-                           <button onClick={(e)=>{e.stopPropagation();updateQty(item.product.id,item.variant?.id,1, item.modifiers)}} className="size-7 rounded-md flex items-center justify-center text-atul-gray/40 hover:text-atul-pink_primary hover:bg-atul-pink_soft/20 transition-all active:scale-90"><Plus size={12} strokeWidth={2.5}/></button>
+
+                        {/* Row 2: Qty stepper + Delete */}
+                        <div className="flex items-center justify-between">
+                          {/* Stepper */}
+                          <div className="flex items-center gap-0.5 bg-gray-50 rounded-xl border border-gray-100/80 p-0.5">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, -1, item.modifiers); }}
+                              className="size-7 rounded-lg flex items-center justify-center text-atul-gray/40 hover:text-atul-pink_primary hover:bg-white transition-all active:scale-90"
+                            >
+                              <Minus size={12} strokeWidth={2.5} />
+                            </button>
+
+                            {ui.type === 'piece' ? (
+                              <span className="professional-digits text-[12px] font-black w-7 text-center text-atul-charcoal tabular-nums">
+                                {item.qty}
+                              </span>
+                            ) : (
+                              <input
+                                type="number"
+                                step={ui.step}
+                                min={ui.min}
+                                value={item.qty}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => { e.stopPropagation(); setExactQty(item.product.id, item.variant?.id, e.target.value, item.modifiers); }}
+                                className="professional-digits text-[12px] font-black w-12 text-center outline-none bg-transparent tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            )}
+
+                            {/* Unit cycle badge */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); cycleUnit(item.product.id, item.variant?.id, item.modifiers); }}
+                              title="Click to change unit (Qty / Kg / L)"
+                              className="text-[8px] font-black text-atul-pink_primary bg-atul-pink_primary/10 px-1.5 py-0.5 rounded-lg cursor-pointer hover:bg-atul-pink_primary hover:text-white transition-all select-none"
+                            >
+                              {ui.label}
+                            </button>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, 1, item.modifiers); }}
+                              className="size-7 rounded-lg flex items-center justify-center text-atul-gray/40 hover:text-atul-pink_primary hover:bg-white transition-all active:scale-90"
+                            >
+                              <Plus size={12} strokeWidth={2.5} />
+                            </button>
+                          </div>
+
+                          {/* Delete */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.product.id, item.variant?.id, item.modifiers); }}
+                            className="size-7 rounded-xl flex items-center justify-center text-gray-200 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                         <button onClick={(e)=>{e.stopPropagation();removeFromCart(item.product.id,item.variant?.id, item.modifiers)}} className="size-7 rounded-md flex items-center justify-center text-gray-200 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"><Trash2 size={13}/></button>
-                     </div>
-                  </motion.div>
+                      </div>
+                    </motion.div>
                   );
                 })}
-             </div>
-           )}
+              </AnimatePresence>
+
+              {/* Bottom spacer so last item isn't hidden under footer gradient */}
+              <div className="h-2" />
+            </div>
+          )}
         </div>
 
-        {/* Totals & Actions */}
-        <div className="p-5 bg-white border-t border-gray-100 relative z-50">
-           <div className="space-y-1.5 mb-5">
-              <div className="flex justify-between items-center text-xs text-atul-gray/40">
-                 <span className="font-medium">Subtotal</span>
-                 <span className="professional-digits font-bold">₹{subtotal.toFixed(0)}</span>
+        {/* ── Footer: Totals + Actions ── */}
+        <div className="relative shrink-0">
+          {/* Gradient fade-out above footer */}
+          <div className="absolute -top-8 left-0 right-0 h-8 bg-gradient-to-t from-[#FDF3F6] to-transparent pointer-events-none z-10" />
+
+          <div className="px-4 pt-3 pb-5 space-y-3 bg-[#FDF3F6] relative z-20">
+
+            {/* Bill breakdown card */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-white px-4 py-3 space-y-2 shadow-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-[10.5px] font-bold text-atul-gray/50 uppercase tracking-wider">Subtotal</span>
+                <span className="professional-digits text-[12px] font-bold text-atul-charcoal/60">₹{subtotal.toFixed(0)}</span>
               </div>
-              <div className="flex justify-between items-center text-xs text-atul-gray/40">
-                 <span className="font-medium">GST</span>
-                 <span className="professional-digits font-bold">₹{tax.toFixed(0)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-[10.5px] font-bold text-atul-gray/50 uppercase tracking-wider">GST</span>
+                <span className="professional-digits text-[12px] font-bold text-atul-charcoal/60">₹{tax.toFixed(0)}</span>
               </div>
-              <div className="pt-3 border-t border-gray-100 mt-2">
-                 <div className="flex items-baseline justify-between">
-                    <span className="text-xs font-bold text-atul-charcoal/50">Total</span>
-                    <span className="professional-digits text-3xl font-extrabold text-atul-pink_primary tracking-tight">
-                       ₹{total.toFixed(0)}
-                    </span>
-                 </div>
-              </div>
-           </div>
-           
-           <div className="flex gap-2">
-              <button 
+            </div>
+
+            {/* Grand total pill */}
+            <div className="flex items-center justify-between bg-atul-pink_primary/10 border border-atul-pink_primary/15 rounded-2xl px-4 py-3">
+              <span className="text-[11px] font-black text-atul-charcoal/50 uppercase tracking-widest">Total</span>
+              <motion.span
+                key={total}
+                initial={{ scale: 1.15, opacity: 0.6 }}
+                animate={{ scale: 1,    opacity: 1   }}
+                className="professional-digits text-[30px] font-black text-atul-pink_primary tracking-tight leading-none"
+              >
+                ₹{total.toFixed(0)}
+              </motion.span>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-0.5">
+              {/* Hold button */}
+              <button
                 onClick={handleHoldOrder}
                 disabled={cart.length === 0}
-                className="size-11 rounded-xl bg-atul-charcoal text-white flex items-center justify-center hover:bg-black transition-all active:scale-95 disabled:opacity-20 shrink-0">
-                <Pause size={16} />
+                className="flex items-center gap-1.5 px-3.5 py-3.5 rounded-xl bg-atul-charcoal text-white text-[10px] font-black uppercase tracking-wider hover:bg-black active:scale-95 transition-all disabled:opacity-20 shrink-0 shadow-sm"
+              >
+                <Pause size={13} />
+                Hold
               </button>
-              <button 
-                onClick={() => setStep('review')} 
-                disabled={cart.length === 0} 
-                className="flex-1 bg-atul-pink_primary text-white py-3 rounded-xl font-bold text-sm hover:bg-atul-pink_deep transition-all active:scale-[0.98] disabled:opacity-30 flex items-center justify-center gap-2 group shadow-lg shadow-atul-pink_primary/20">
-                Proceed <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform"/>
+
+              {/* Proceed button */}
+              <button
+                onClick={() => setStep('review')}
+                disabled={cart.length === 0}
+                className="flex-1 bg-atul-pink_primary text-white py-3.5 rounded-xl font-black text-[13px] tracking-wide hover:bg-atul-pink_deep active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group shadow-lg shadow-atul-pink_primary/25"
+              >
+                Proceed
+                <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
               </button>
-           </div>
+            </div>
+          </div>
         </div>
       </aside>
 

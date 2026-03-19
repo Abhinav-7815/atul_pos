@@ -13,6 +13,7 @@ class UserRole(models.TextChoices):
     KITCHEN = 'kitchen', 'Kitchen Staff'
     INVENTORY_MANAGER = 'inventory_manager', 'Inventory Manager'
     DELIVERY_MANAGER = 'delivery_manager', 'Delivery Manager'
+    DISTRIBUTOR      = 'distributor',       'Distributor'
 
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):

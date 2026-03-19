@@ -48,21 +48,23 @@ export default function Settings({ user, onUpdateUser }) {
     setPosFeatures({
       showAdvancedManager: config.showAdvancedManager ?? true
     });
-  }, []);
+  }, [user?.outlet_id]);
 
   const fetchOutlet = async () => {
     try {
       setLoading(true);
-      const res = await outletApi.getOutlet(user?.outlet_id || 1);
-      setOutlet(res.data?.data || res.data);
-    } catch (err) {
-      if (err.response?.status === 404) {
-        setOutlet({ 
-          name: '', phone: '', email: '', address: '', city: '',
-          outlet_code: '', gstin: '', fssai_number: '',
-          base_tax_rate: 5.0, receipt_header: '', receipt_footer: ''
-        });
+      let data;
+      if (user?.outlet_id) {
+        const res = await outletApi.getOutlet(user.outlet_id);
+        data = res.data?.data || res.data;
+      } else {
+        // Fallback: fetch all outlets and use the first one
+        const res = await outletApi.getOutlets();
+        const list = res.data?.data || res.data || [];
+        data = Array.isArray(list) ? list[0] : list;
       }
+      if (data) setOutlet(data);
+    } catch (err) {
       console.error("Failed to fetch outlet settings", err);
     } finally {
       setLoading(false);

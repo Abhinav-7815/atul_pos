@@ -34,7 +34,10 @@ class LoginView(APIView):
                     'email': user.email,
                     'full_name': user.full_name,
                     'role': user.role,
-                    'outlet_id': user.outlet.id if user.outlet else None
+                    'outlet_id':   user.outlet.id          if user.outlet else None,
+                    'outlet_name': user.outlet.name        if user.outlet else None,
+                    'outlet_type': user.outlet.outlet_type if user.outlet else None,
+                    'distributor_discount_pct': float(user.outlet.distributor_discount_pct) if user.outlet else 0,
                 }
             })
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)

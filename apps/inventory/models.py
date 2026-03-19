@@ -22,7 +22,8 @@ class InventoryTransaction(BaseModel):
         ('sale', 'Sale Deduction'),
         ('adjustment', 'Manual Adjustment'),
         ('transfer', 'Inter-outlet Transfer'),
-        ('waste', 'Wastage Buffer'),
+        ('waste',     'Wastage Buffer'),
+        ('dispatch',  'Distribution Dispatch'),
     )
     stock_item = models.ForeignKey(StockItem, on_delete=models.CASCADE, related_name="transactions")
     transaction_type = models.CharField(max_length=20, choices=TYPES)

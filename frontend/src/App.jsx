@@ -16,8 +16,46 @@ import ShiftManager from './components/ShiftManager';
 import Procurement from './components/Procurement';
 import Menu from './components/Menu';
 import PinModal from './components/PinModal';
+import Distribution from './components/Distribution';
+import DistributorPanel from './components/DistributorPanel';
 import { cn } from './lib/utils';
 
+
+// ── Build sidebar nav items based on logged-in user's outlet type ──────────
+function getNavItems(user) {
+  const type = user?.outlet_type;
+
+  if (type === 'distributor') {
+    return [
+      { id: 'distributor_dashboard', label: 'My Dashboard',  icon: 'dashboard' },
+      { id: 'distributor_orders',    label: 'Place Order',   icon: 'add_shopping_cart' },
+      { id: 'distributor_myorders',  label: 'My Orders',     icon: 'receipt_long' },
+      { id: 'distributor_stock',     label: 'My Stock',      icon: 'inventory_2' },
+      { id: 'settings',              label: 'Settings',      icon: 'settings' },
+    ];
+  }
+
+  const base = [
+    { id: 'dashboard',    label: 'Dashboard',   icon: 'dashboard' },
+    { id: 'pos',          label: 'Billing POS', icon: 'point_of_sale' },
+    { id: 'kds',          label: 'KDS (Live)',  icon: 'countertops' },
+    { id: 'menu',         label: 'Catalog',     icon: 'restaurant_menu' },
+    { id: 'inventory',    label: 'Inventory',   icon: 'inventory_2' },
+    { id: 'procurement',  label: 'Procurement', icon: 'local_shipping' },
+    { id: 'customers',    label: 'Customers',   icon: 'group' },
+    { id: 'staff',        label: 'Staff',       icon: 'badge' },
+    { id: 'reports',      label: 'Reports',     icon: 'analytics' },
+    { id: 'shift',        label: 'Day Close',   icon: 'account_balance_wallet' },
+    { id: 'settings',     label: 'Settings',    icon: 'settings' },
+  ];
+
+  if (type === 'main') {
+    // Insert Distribution after Procurement (index 6)
+    base.splice(6, 0, { id: 'distribution', label: 'Distribution', icon: 'hub' });
+  }
+
+  return base;
+}
 
 const MaterialIcon = ({ name, className = "", fill = false }) => (
   <span className={cn("material-symbols-outlined", className, fill && "fill-1")}>
@@ -76,7 +114,8 @@ export default function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
   };
 
   const handlePinSwitch = async (pin) => {
@@ -84,7 +123,8 @@ export default function App() {
       const res = await authApi.pinLogin(pin);
       const loginData = res.data?.data || res.data;
       if (loginData && loginData.access) {
-        localStorage.setItem('token', loginData.access);
+        localStorage.setItem('access_token', loginData.access);
+        localStorage.setItem('refresh_token', loginData.refresh);
         handleLogin(loginData.user);
         setIsPinModalOpen(false);
         return true;
@@ -119,19 +159,7 @@ export default function App() {
 
         {/* Navigation */}
         <nav className="flex-1 mt-4 space-y-1.5 pr-5">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-            { id: 'pos', label: 'Billing POS', icon: 'point_of_sale' },
-            { id: 'kds', label: 'KDS (Live)', icon: 'countertops' },
-            { id: 'menu', label: 'Catalog', icon: 'restaurant_menu' },
-            { id: 'inventory', label: 'Inventory', icon: 'inventory_2' },
-            { id: 'procurement', label: 'Procurement', icon: 'local_shipping' },
-            { id: 'customers', label: 'Customers', icon: 'group' },
-            { id: 'staff', label: 'Staff', icon: 'badge' },
-            { id: 'reports', label: 'Reports', icon: 'analytics' },
-            { id: 'shift', label: 'Day Close', icon: 'account_balance_wallet' },
-            { id: 'settings', label: 'Settings', icon: 'settings' }
-          ].map((item) => (
+          {getNavItems(user).map((item) => (
             <button
               key={item.id}
               onClick={() => {
@@ -199,7 +227,7 @@ export default function App() {
         {activeTab === 'dashboard' ? (
           <Dashboard user={user} onNewOrder={() => setActiveTab('pos')} />
         ) : activeTab === 'pos' ? (
-          <POS />
+          <POS user={user} />
         ) : activeTab === 'inventory' ? (
           <Inventory user={user} />
         ) : activeTab === 'staff' ? (
@@ -218,6 +246,10 @@ export default function App() {
           <ShiftManager user={user} />
         ) : activeTab === 'menu' ? (
           <Menu user={user} />
+        ) : activeTab === 'distribution' ? (
+          <Distribution user={user} />
+        ) : activeTab === 'distributor_dashboard' || activeTab === 'distributor_orders' || activeTab === 'distributor_myorders' || activeTab === 'distributor_stock' ? (
+          <DistributorPanel user={user} activeSubTab={activeTab} onTabChange={(tab) => { setActiveTab(tab); localStorage.setItem('activeTab', tab); }} />
         ) : (
           <div className="p-12 h-full flex flex-col items-center justify-center text-atul-pink_primary/10 font-serif gap-6 relative z-10 w-full">
             <MaterialIcon name="auto_awesome" className="text-8xl" />

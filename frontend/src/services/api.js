@@ -78,4 +78,31 @@ export const outletApi = {
   updateOutlet: (id, data) => api.patch(`/outlets/${id}/`, data),
 };
 
+export const distributionApi = {
+  // Dashboard stats (works for both main branch and distributor)
+  getDashboard: () => api.get('/distribution/dashboard/'),
+
+  // Distributor Orders — CRUD
+  getOrders:   (params) => api.get('/distribution/orders/', { params }),
+  getOrder:    (id)     => api.get(`/distribution/orders/${id}/`),
+  createOrder: (data)   => api.post('/distribution/orders/', data),
+  updateOrder: (id, data) => api.patch(`/distribution/orders/${id}/`, data),
+  deleteOrder: (id)     => api.delete(`/distribution/orders/${id}/`),
+
+  // Workflow actions
+  submitOrder:  (id)        => api.post(`/distribution/orders/${id}/submit/`),
+  approveOrder: (id)        => api.post(`/distribution/orders/${id}/approve/`),
+  processOrder: (id)        => api.post(`/distribution/orders/${id}/process/`),
+  dispatchOrder:(id, data)  => api.post(`/distribution/orders/${id}/dispatch/`, data),
+  receiveOrder: (id)        => api.post(`/distribution/orders/${id}/receive/`),
+  cancelOrder:  (id, data)  => api.post(`/distribution/orders/${id}/cancel/`, data),
+
+  // Dispatches (read-only)
+  getDispatches: (params) => api.get('/distribution/dispatches/', { params }),
+  getDispatch:   (id)     => api.get(`/distribution/dispatches/${id}/`),
+
+  // Distributor outlets (filtered from outletApi)
+  getDistributorOutlets: () => api.get('/outlets/', { params: { outlet_type: 'distributor' } }),
+};
+
 export default api;
