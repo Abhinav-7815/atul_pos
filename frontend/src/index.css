@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@400;500;700&family=Rubik:wght@300;400;500;600;700;800;900&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-atul-pink_primary: #D63384;
+  --color-atul-pink_deep: #C2185B;
+  --color-atul-pink_soft: #FFE4EF;
+  --color-atul-pink_brand_soft: #F8BBD9;
+  --color-atul-pink_gradient_start: #FFF5F8;
+  --color-atul-cream: #FFF5F8;
+  --color-atul-charcoal: #1A1A2E;
+  --color-atul-gray: #7D7D8E;
+  --color-atul-mango: #FFA000;
+  --color-atul-mint: #4CAF50;
+  --color-atul-red: #E53935;
+  --color-atul-dark: #0F0F14;
+  --color-atul-dark_card: #16161D;
+  --color-atul-dark_border: rgba(255, 255, 255, 0.05);
+  
+  --font-serif: "Playfair Display", serif;
+  --font-heading: "Rubik", sans-serif;
+  --font-sans: "Inter", sans-serif;
+  --font-outfit: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-atul-cream text-atul-charcoal font-sans;
+    background-image: url("https://www.transparenttextures.com/patterns/p6.png");
+    background-blend-mode: overlay;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-atul-pink_primary hover:bg-atul-pink_deep text-white px-4 py-2 rounded-xl transition-all active:scale-95 shadow-lg shadow-atul-pink_primary/20 cursor-pointer;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+      0 4px 24px -1px rgba(214, 51, 132, 0.03),
+      0 1px 4px -1px rgba(214, 51, 132, 0.05);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass:hover {
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 
+      0 10px 30px -5px rgba(214, 51, 132, 0.08),
+      0 4px 10px -2px rgba(214, 51, 132, 0.05);
+  }
+
+  .fill-1 {
+    font-variation-settings: 'FILL' 1;
+  }
+
+  .professional-digits {
+    font-family: var(--font-outfit);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .luxury-gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-atul-pink_deep to-atul-pink_primary;
+  }
+
+  .premium-glow {
+    box-shadow: 0 0 40px rgba(214, 51, 132, 0.1);
+  }
+
+  .luxury-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.2) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+      0 10px 40px -10px rgba(0, 0, 0, 0.05),
+      0 1px 1px 0 rgba(255, 255, 255, 0.8) inset;
+    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .luxury-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 
+      0 20px 60px -15px rgba(214, 51, 132, 0.15),
+      0 1px 1px 0 rgba(255, 255, 255, 1) inset;
+    border: 1px solid rgba(214, 51, 132, 0.2);
+  }
+}
+
+/* Custom Scrollbar - Dark */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Hide scrollbar for category bar */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar - Horizontal */
+.custom-scrollbar-h::-webkit-scrollbar {
+  height: 6px;
+}
+.custom-scrollbar-h::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar-h::-webkit-scrollbar-thumb {
+  background: rgba(214, 51, 132, 0.1);
+  border-radius: 10px;
+}
+.custom-scrollbar-h::-webkit-scrollbar-thumb:hover {
+  background: rgba(214, 51, 132, 0.3);
+}

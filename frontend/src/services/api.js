@@ -1,0 +1,81 @@
+import axios from 'axios';
+
+const API_URL = 'http://localhost:8000/api/v1';
+
+const api = axios.create({
+  baseURL: API_URL,
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  // Skip adding token for auth routes to avoid validation errors on stale tokens
+  const skipAuth = config.url.includes('/auth/login/') || config.url.includes('/auth/refresh/');
+  
+  if (token && !skipAuth) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export const authApi = {
+  login: (credentials) => api.post('/auth/login/', credentials),
+  pinLogin: (pin) => api.post('/auth/login/', { pin }),
+  refreshToken: (refresh) => api.post('/auth/refresh/', { refresh }),
+};
+
+export const menuApi = {
+  getCategories: () => api.get('/menu/categories/'),
+  getProducts: (params) => api.get('/menu/products/', { params }),
+};
+
+export const orderApi = {
+  createOrder: (data) => api.post('/orders/', data),
+  getOrder: (id) => api.get(`/orders/${id}/`),
+  addItem: (orderId, data) => api.post(`/orders/${orderId}/items/`, data),
+  updateItem: (orderId, itemId, data) => api.patch(`/orders/${orderId}/items/${itemId}/`, data),
+  confirmOrder: (orderId) => api.post(`/orders/${orderId}/confirm/`),
+  recordPayment: (orderId, data) => api.post(`/orders/${orderId}/payment/`, data),
+  getOrders: (params) => api.get('/orders/', { params }),
+  voidOrder: (orderId, data) => api.post(`/orders/${orderId}/void/`, data),
+  getReceipt: (orderId) => api.get(`/orders/${orderId}/receipt/`),
+};
+
+export const analyticsApi = {
+  getDashboardStats: (params) => api.get('/analytics/dashboard/', { params }),
+  getReports: (params) => api.get('/analytics/reports/', { params }),
+  getAdvancedAnalytics: (params) => api.get('/analytics/advanced/', { params }),
+  getExportUrl: (params) => `${api.defaults.baseURL}/analytics/reports/?${new URLSearchParams(params).toString()}&export=csv`,
+};
+
+export const staffApi = {
+  getCurrentShift: () => api.get('/staff/shifts/current/'),
+  openShift: (data) => api.post('/staff/shifts/open/', data),
+  closeShift: (data) => api.post('/staff/shifts/close/', data),
+  addCashEntry: (data) => api.post('/staff/shifts/cash-entry/', data),
+  getShifts: (params) => api.get('/staff/shifts/', { params }),
+};
+
+export const inventoryApi = {
+  getStocks: (params) => api.get('/inventory/stocks/', { params }),
+  batchAdjust: (data) => api.post('/inventory/stocks/batch_adjust/', data),
+  getSuppliers: (params) => api.get('/inventory/suppliers/', { params }),
+  createSupplier: (data) => api.post('/inventory/suppliers/', data),
+  getPurchaseOrders: (params) => api.get('/inventory/purchase-orders/', { params }),
+  createPurchaseOrder: (data) => api.post('/inventory/purchase-orders/', data),
+  receivePurchaseOrder: (id) => api.post(`/inventory/purchase-orders/${id}/receive/`),
+};
+
+export const customerApi = {
+  getCustomers: (params) => api.get('/customers/', { params }),
+  createCustomer: (data) => api.post('/customers/', data),
+  updateCustomer: (id, data) => api.put(`/customers/${id}/`, data),
+};
+
+export const outletApi = {
+  getOutlets: () => api.get('/outlets/'),
+  getOutlet: (id) => api.get(`/outlets/${id}/`),
+  createOutlet: (data) => api.post('/outlets/', data),
+  updateOutlet: (id, data) => api.patch(`/outlets/${id}/`, data),
+};
+
+export default api;
