@@ -126,7 +126,7 @@ export default function KDS({ user }) {
     loadActiveOrders();
 
     // Setup WebSocket
-    const outletId = 1; // Temporary: should come from user profile
+    const outletId = user?.outlet || 'global';
     const wsUrl = `ws://localhost:8000/ws/kds/${outletId}/`;
     const ws = new WebSocket(wsUrl);
 

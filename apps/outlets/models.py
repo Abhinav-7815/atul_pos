@@ -9,6 +9,11 @@ class OutletType(models.TextChoices):
     KIOSK       = 'kiosk',       'Kiosk'
 
 
+class BranchType(models.TextChoices):
+    OWN       = 'own',       'Own Branch'
+    FRANCHISE = 'franchise', 'Franchise Branch'
+
+
 class Outlet(BaseModel):
     name = models.CharField(max_length=255)
     address = models.TextField()
@@ -47,6 +52,13 @@ class Outlet(BaseModel):
         max_digits=5, decimal_places=2, default=0.00,
         help_text='Percentage discount off MRP granted to this distributor.',
     )
+    branch_type = models.CharField(
+        max_length=20,
+        choices=BranchType.choices,
+        null=True, blank=True,
+        help_text='For distributors: own branch or franchise branch.',
+    )
+    is_active = models.BooleanField(default=True, help_text='Whether this outlet is currently active.')
 
     class Meta:
         verbose_name = "Outlet"

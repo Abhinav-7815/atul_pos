@@ -3,7 +3,10 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from apps.accounts.views import UserViewSet
 from apps.outlets.views import OutletViewSet
-from apps.menu.views import CategoryViewSet, ProductViewSet
+from apps.menu.views import (
+    CategoryViewSet, ProductViewSet, ProductVariantViewSet, 
+    ModifierGroupViewSet, ModifierViewSet
+)
 from apps.orders.views import OrderViewSet
 from apps.accounts.auth_views import LoginView, OutletSwitchView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -11,12 +14,15 @@ from rest_framework_simplejwt.views import TokenRefreshView
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
 router.register(r'outlets', OutletViewSet)
-router.register(r'orders', OrderViewSet)
+router.register(r'orders', OrderViewSet, basename='orders')
 
 # Menu specific nesting
 menu_router = DefaultRouter()
 menu_router.register(r'categories', CategoryViewSet, basename='menu-categories')
 menu_router.register(r'products', ProductViewSet, basename='menu-products')
+menu_router.register(r'variants', ProductVariantViewSet, basename='menu-variants')
+menu_router.register(r'modifier-groups', ModifierGroupViewSet, basename='menu-modifier-groups')
+menu_router.register(r'modifiers', ModifierViewSet, basename='menu-modifiers')
 
 urlpatterns = [
     path('', include(router.urls)),

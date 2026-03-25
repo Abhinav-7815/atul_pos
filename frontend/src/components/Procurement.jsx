@@ -37,7 +37,7 @@ export default function Procurement({ user }) {
 
   // Forms
   const [supplierForm, setSupplierForm] = useState({ name: '', contact_person: '', phone: '', email: '', address: '', gstin: '' });
-  const [poForm, setPOForm] = useState({ supplier: '', outlet: user.outlet_id, items: [], notes: '' });
+  const [poForm, setPOForm] = useState({ supplier: '', outlet: user.outlet, items: [], notes: '' });
 
   useEffect(() => {
     fetchData();
@@ -47,7 +47,7 @@ export default function Procurement({ user }) {
     try {
       setLoading(true);
       if (activeTab === 'pos') {
-        const res = await inventoryApi.getPurchaseOrders({ outlet_id: user.outlet_id });
+        const res = await inventoryApi.getPurchaseOrders({ outlet: user.outlet });
         const poData = res.data?.data || res.data?.results || res.data;
         setPurchaseOrders(Array.isArray(poData) ? poData : []);
         const prodRes = await menuApi.getProducts();

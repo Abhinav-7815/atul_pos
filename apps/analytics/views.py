@@ -14,13 +14,13 @@ class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        outlet_id = request.query_params.get('outlet_id')
+        outlet_id = request.query_params.get('outlet') or request.query_params.get('outlet_id')
         if not outlet_id:
-            # Fallback to user's outlet if available
+            # Fallback to user's outlet
             outlet_id = getattr(request.user, 'outlet_id', None)
         
         if not outlet_id:
-            return Response({"error": "Outlet ID is required"}, status=400)
+            return Response({"error": "Outlet is required"}, status=400)
 
         today = timezone.now().date()
         seven_days_ago = today - timedelta(days=6)
@@ -108,7 +108,10 @@ class ReportsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        outlet_id = request.query_params.get('outlet_id')
+        outlet_id = request.query_params.get('outlet') or request.query_params.get('outlet_id')
+        if not outlet_id:
+            outlet_id = getattr(request.user, 'outlet_id', None)
+            
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         export_mode = request.query_params.get('export', False)
@@ -140,13 +143,14 @@ class ReportsView(APIView):
         }
 
         # Sales by Payment Mode
-        payments_qs = orders.values('payment_mode').annotate(
-            total=Sum('total_amount'),
-            count=Count('id')
+        # Order doesn't have payment_mode anymore, it's in the Payment model.
+        payments_qs = orders.values('payments__method').annotate(
+            total=Sum('payments__amount'),
+            count=Count('id', distinct=True)
         )
         payments = [
             {
-                "payment_mode": p['payment_mode'],
+                "payment_mode": (p['payments__method'] or 'cash').title(),
                 "total": float(p['total'] or 0.0),
                 "count": p['count']
             } for p in payments_qs
@@ -208,7 +212,7 @@ class AdvancedAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        outlet_id = request.query_params.get('outlet_id')
+        outlet_id = request.query_params.get('outlet') or request.query_params.get('outlet_id')
         days = int(request.query_params.get('days', 30))
         
         if not outlet_id:
@@ -250,12 +254,12 @@ class AdvancedAnalyticsView(APIView):
             daily_qty=Sum('quantity')
         ).order_by('-daily_qty')[:15]
 
-        # 4. Payment Velocity (Success rates/volume trends)
+        # 4. Payment Trends
         payment_trend = orders_qs.annotate(
             date=TruncDate('created_at')
-        ).values('date', 'payment_mode').annotate(
-            volume=Sum('total_amount'),
-            count=Count('id')
+        ).values('date', 'payments__method').annotate(
+            volume=Sum('payments__amount'),
+            count=Count('id', distinct=True)
         ).order_by('date')
 
         return Response({

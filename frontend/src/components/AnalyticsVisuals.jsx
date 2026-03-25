@@ -20,7 +20,7 @@ export default function AnalyticsVisuals({ user }) {
     try {
       setLoading(true);
       const res = await analyticsApi.getAdvancedAnalytics({ 
-        outlet_id: user?.outlet_id,
+        outlet_id: user?.outlet,
         days: days 
       });
       setData(res.data);

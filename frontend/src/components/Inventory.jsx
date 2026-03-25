@@ -45,7 +45,7 @@ export default function Inventory({ user }) {
     try {
       setLoading(true);
       const res = await inventoryApi.getStocks({ 
-        outlet_id: user?.outlet_id,
+        outlet: user?.outlet, 
         q: search 
       });
       const stockData = res.data?.data || res.data?.results || res.data;
@@ -68,7 +68,7 @@ export default function Inventory({ user }) {
       }));
       
       await inventoryApi.batchAdjust({
-        outlet_id: user.outlet_id,
+        outlet: user.outlet,
         entries
       });
       

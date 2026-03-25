@@ -22,25 +22,43 @@ function cn(...inputs) {
 }
 
 export default function Reports({ user }) {
-  const today = new Date().toISOString().split('T')[0];
+  // Use local date for "today" calculation
+  const getToday = () => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset() * 60000;
+    const localDate = new Date(d.getTime() - offset);
+    return localDate.toISOString().split('T')[0];
+  };
+
+  const today = getToday();
   const [dates, setDates] = useState({ start: today, end: today });
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('summary'); // 'summary' or 'visuals'
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('Overview');
 
   useEffect(() => {
-    fetchReports();
-  }, []);
+    fetchData();
+  }, [dates]);
 
-  const fetchReports = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       const res = await analyticsApi.getReports({
-        outlet_id: user?.outlet_id || 1,
+        outlet: user?.outlet,
         start_date: dates.start,
         end_date: dates.end
       });
       setData(res.data?.data || res.data);
+
+      // Also fetch full history for the history tab
+      const historyRes = await orderApi.getOrders({
+        outlet: user?.outlet,
+        created_at__date: dates.start, 
+        limit: 100
+      });
+      const histData = historyRes.data?.data || historyRes.data?.results || historyRes.data;
+      setHistory(Array.isArray(histData) ? histData : []);
     } catch (err) {
       console.error("Failed to fetch reports", err);
     } finally {
@@ -50,7 +68,7 @@ export default function Reports({ user }) {
 
   const handleExport = () => {
     const url = analyticsApi.getExportUrl({
-      outlet_id: user?.outlet_id || 1,
+      outlet: user?.outlet,
       start_date: dates.start,
       end_date: dates.end
     });
@@ -78,6 +96,13 @@ export default function Reports({ user }) {
                 activeTab === 'visuals' ? "text-atul-pink_primary border-atul-pink_primary" : "text-atul-gray/40 border-transparent hover:text-atul-charcoal"
               )}
             >Visual Insights</button>
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={cn(
+                "text-[10px] font-black uppercase tracking-[0.2em] pb-1 border-b-2 transition-all",
+                activeTab === 'history' ? "text-atul-pink_primary border-atul-pink_primary" : "text-atul-gray/40 border-transparent hover:text-atul-charcoal"
+              )}
+            >Order History</button>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -97,7 +122,7 @@ export default function Reports({ user }) {
                 className="bg-transparent text-sm font-bold outline-none"
               />
               <button 
-                onClick={fetchReports}
+                onClick={fetchData}
                 className="ml-2 bg-atul-pink_primary text-white p-2 rounded-xl hover:scale-105 active:scale-95 transition-all"
               >
                 <Filter size={16}/>
@@ -119,6 +144,49 @@ export default function Reports({ user }) {
       ) : activeTab === 'visuals' ? (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
            <AnalyticsVisuals user={user} />
+        </div>
+      ) : activeTab === 'history' ? (
+        <div className="flex-1 glass rounded-[2.5rem] p-8 overflow-y-auto custom-scrollbar">
+           <h4 className="font-serif text-xl font-bold mb-6">Detailed Order Log</h4>
+           <table className="w-full">
+              <thead className="text-[10px] uppercase font-bold text-atul-pink_primary/40 text-left">
+                 <tr>
+                    <th className="pb-4">Order #</th>
+                    <th className="pb-4">Time</th>
+                    <th className="pb-4">Items</th>
+                    <th className="pb-4 text-center">Amount</th>
+                    <th className="pb-4 text-right">Payment</th>
+                 </tr>
+              </thead>
+              <tbody className="divide-y divide-atul-pink_primary/5">
+                 {history.map((order, i) => (
+                   <tr key={order.id} className="group hover:bg-atul-pink_primary/5 transition-colors">
+                      <td className="py-4 font-bold text-sm">#{order.order_number}</td>
+                      <td className="py-4 text-atul-charcoal/60 text-xs">
+                         {new Date(order.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="py-4 text-xs font-medium max-w-xs truncate">
+                         {order.items.map(it => `${Math.round(it.quantity)}x ${it.product_name}`).join(', ')}
+                      </td>
+                      <td className="py-4 text-center font-bold professional-digits">
+                         ₹{order.total_amount}
+                      </td>
+                      <td className="py-4 text-right">
+                         <span className="bg-atul-pink_soft text-atul-pink_primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                           {order.payments?.[0]?.method || (order.payment_mode || 'Cash')}
+                         </span>
+                      </td>
+                   </tr>
+                 ))}
+                 {history.length === 0 && (
+                   <tr>
+                      <td colSpan="5" className="py-20 text-center opacity-20">
+                         <p className="font-serif text-xl font-bold italic">No records found for this period</p>
+                      </td>
+                   </tr>
+                 )}
+              </tbody>
+           </table>
         </div>
       ) : data ? (
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-8 pb-10">

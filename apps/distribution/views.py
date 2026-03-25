@@ -217,9 +217,9 @@ class DistributorOrderViewSet(viewsets.ModelViewSet):
         order.save(update_fields=['status'])
         return Response(DistributorOrderSerializer(order).data)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], url_path='dispatch')
     @transaction.atomic
-    def dispatch(self, request, pk=None):
+    def dispatch_order(self, request, pk=None):
         """
         Main branch dispatches stock to the distributor.
         Creates a StockDispatch record and deducts from main branch inventory.

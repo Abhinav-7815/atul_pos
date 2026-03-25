@@ -16,7 +16,10 @@ class InventoryViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = self.queryset
-        outlet_id = self.request.query_params.get('outlet_id')
+        outlet_id = self.request.query_params.get('outlet') or self.request.query_params.get('outlet_id')
+        if not outlet_id:
+            outlet_id = getattr(self.request.user, 'outlet_id', None)
+            
         if outlet_id:
             qs = qs.filter(outlet_id=outlet_id)
         
@@ -30,11 +33,11 @@ class InventoryViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def batch_adjust(self, request):
         """Batch update stock for an outlet (Bulk Purchase/Adjustment entries)."""
-        outlet_id = request.data.get('outlet_id')
+        outlet_id = request.data.get('outlet') or request.data.get('outlet_id')
         entries = request.data.get('entries', []) # List of {product_id, variant_id, delta, type, notes}
         
         if not outlet_id:
-            return Response({"error": "outlet_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "outlet_id or outlet is required"}, status=status.HTTP_400_BAD_REQUEST)
             
         outlet = Outlet.objects.get(id=outlet_id)
         results = []

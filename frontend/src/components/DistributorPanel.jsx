@@ -81,7 +81,7 @@ export default function DistributorPanel({ user, activeSubTab, onTabChange }) {
       const [dashRes, ordersRes, stockRes] = await Promise.all([
         distributionApi.getDashboard(),
         distributionApi.getOrders(),
-        inventoryApi.getStocks({ outlet_id: user?.outlet_id }),
+        inventoryApi.getStocks({ outlet_id: user?.outlet }),
       ]);
       setStats(dashRes.data?.data || dashRes.data);
       setOrders(ordersRes.data?.data || ordersRes.data || []);
@@ -91,7 +91,7 @@ export default function DistributorPanel({ user, activeSubTab, onTabChange }) {
     } finally {
       setLoading(false);
     }
-  }, [user?.outlet_id]);
+  }, [user?.outlet]);
 
   const loadProducts = useCallback(async () => {
     try {

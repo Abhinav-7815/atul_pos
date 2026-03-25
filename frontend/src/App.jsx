@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -18,12 +18,18 @@ import Menu from './components/Menu';
 import PinModal from './components/PinModal';
 import Distribution from './components/Distribution';
 import DistributorPanel from './components/DistributorPanel';
+import Distributors from './components/Distributors';
 import { cn } from './lib/utils';
 
 
 // ── Build sidebar nav items based on logged-in user's outlet type ──────────
 function getNavItems(user) {
   const type = user?.outlet_type;
+  const role = user?.role;
+  const isSuperAdmin = role === 'superadmin';
+
+  // Load visibility config
+  const navConfig = JSON.parse(localStorage.getItem('atul_pos_nav_config') || '{}');
 
   if (type === 'distributor') {
     return [
@@ -35,26 +41,47 @@ function getNavItems(user) {
     ];
   }
 
-  const base = [
-    { id: 'dashboard',    label: 'Dashboard',   icon: 'dashboard' },
-    { id: 'pos',          label: 'Billing POS', icon: 'point_of_sale' },
-    { id: 'kds',          label: 'KDS (Live)',  icon: 'countertops' },
-    { id: 'menu',         label: 'Catalog',     icon: 'restaurant_menu' },
-    { id: 'inventory',    label: 'Inventory',   icon: 'inventory_2' },
-    { id: 'procurement',  label: 'Procurement', icon: 'local_shipping' },
-    { id: 'customers',    label: 'Customers',   icon: 'group' },
-    { id: 'staff',        label: 'Staff',       icon: 'badge' },
-    { id: 'reports',      label: 'Reports',     icon: 'analytics' },
-    { id: 'shift',        label: 'Day Close',   icon: 'account_balance_wallet' },
-    { id: 'settings',     label: 'Settings',    icon: 'settings' },
-  ];
+  const navItems = [];
 
-  if (type === 'main') {
-    // Insert Distribution after Procurement (index 6)
-    base.splice(6, 0, { id: 'distribution', label: 'Distribution', icon: 'hub' });
+  // Helper to add item based on permission (respects config for everyone)
+  const addIfEnabled = (id, label, icon, configKey) => {
+    // Default to true if key is missing, so new terminals see all features
+    const isVisible = navConfig[configKey] ?? true;
+    if (isVisible) {
+      navItems.push({ id, label, icon });
+    }
+  };
+
+  // Dashboard - Super Admin Only, but toggleable
+  if (isSuperAdmin && (navConfig.dashboard_visible ?? true)) {
+    navItems.push({ id: 'dashboard', label: 'Dashboard', icon: 'dashboard' });
   }
 
-  return base;
+  // Operational items (now toggleable)
+  addIfEnabled('pos',   'Billing POS', 'point_of_sale', 'pos_visible');
+  // addIfEnabled('kds',   'KDS (Live)',  'countertops',   'kds_visible');
+  // addIfEnabled('shift', 'Day Close',   'account_balance_wallet', 'shift_visible');
+
+  // Management items (now toggleable for all who had access)
+  addIfEnabled('menu',        'Catalog',      'restaurant_menu', 'menu_visible');
+  addIfEnabled('inventory',   'Inventory',    'inventory_2',     'inventory_visible');
+  // addIfEnabled('procurement', 'Procurement',  'local_shipping',  'procurement_visible');
+  // addIfEnabled('customers',   'Customers',    'group',           'customers_visible');
+
+  if (type === 'main') {
+    addIfEnabled('distribution', 'Distribution', 'hub',        'distribution_visible');
+    addIfEnabled('distributors', 'Distributors', 'storefront', 'distributors_visible');
+  }
+
+  // addIfEnabled('staff',   'Staff',   'badge',     'staff_visible');
+  addIfEnabled('reports', 'Reports', 'analytics', 'reports_visible');
+
+  // Safety: Settings always visible for Super Admin
+  if (isSuperAdmin || (navConfig.settings_visible ?? true)) {
+    navItems.push({ id: 'settings', label: 'Settings', icon: 'settings' });
+  }
+
+  return navItems;
 }
 
 const MaterialIcon = ({ name, className = "", fill = false }) => (
@@ -73,6 +100,35 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [navUpdates, setNavUpdates] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const handleNavChange = () => setNavUpdates(prev => prev + 1);
+    window.addEventListener('navConfigChanged', handleNavChange);
+    return () => window.removeEventListener('navConfigChanged', handleNavChange);
+  }, []);
+
+  const navItems = useMemo(() => getNavItems(user), [user, navUpdates]);
+
+  const canAccessTab = useMemo(() => {
+    return navItems.some(item => item.id === activeTab);
+  }, [navItems, activeTab]);
+
+  useEffect(() => {
+    if (!canAccessTab && user?.role !== 'superadmin') {
+      setActiveTab('pos');
+      localStorage.setItem('activeTab', 'pos');
+    }
+  }, [canAccessTab, activeTab, user]);
 
   useEffect(() => {
     if (user) {
@@ -144,8 +200,9 @@ export default function App() {
       {/* Global Grain Overlay */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-50 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuAVBbRsaGYdCe_s-o8jqR9nJa_mthPmgAh0wURjtR78rPPofw-FjgEVlP1a1SZjvP5_caDNAiFJJn4T_HK9JUWMEfkCyowgFI_MqspIP1CiFvv4IkiRmENXYRPX2MJCCSMAUcVWDzEqcD_U9h0oktywI8neBaej-LZcAsDIlyxN_NCMyHtrhQTsnCyKKIQukpRURHFV5IO__JP1DVelhVWW2Q3SMKqacV1bSoLJ9a2d_4I_5RC5cvOn6mS-xtg64rCTeLnGVsCMyzI')]"></div>
 
-      {/* Sidebar */}
-      <aside className="w-[220px] fixed h-screen border-r border-white/50 flex flex-col z-20 bg-transparent">
+      {/* Sidebar - Hides on POS fullscreen */}
+      {(!isFullscreen || activeTab !== 'pos') && (
+        <aside className="w-[220px] fixed h-screen border-r border-white/50 flex flex-col z-20 bg-transparent">
         {/* Logo Section */}
         <div className="p-6 flex items-center gap-2">
           <div className="size-9 bg-atul-pink_primary rounded-full shadow-sm flex items-center justify-center text-white">
@@ -159,7 +216,7 @@ export default function App() {
 
         {/* Navigation */}
         <nav className="flex-1 mt-4 space-y-1.5 pr-5">
-          {getNavItems(user).map((item) => (
+          {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => {
@@ -214,6 +271,7 @@ export default function App() {
           </div>
         </div>
       </aside>
+      )}
 
       <PinModal 
         isOpen={isPinModalOpen} 
@@ -223,7 +281,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="ml-[220px] flex-1 flex flex-col h-screen overflow-hidden">
+      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", (!isFullscreen || activeTab !== 'pos') ? "ml-[220px]" : "ml-0")}>
         {activeTab === 'dashboard' ? (
           <Dashboard user={user} onNewOrder={() => setActiveTab('pos')} />
         ) : activeTab === 'pos' ? (
@@ -246,6 +304,8 @@ export default function App() {
           <ShiftManager user={user} />
         ) : activeTab === 'menu' ? (
           <Menu user={user} />
+        ) : activeTab === 'distributors' ? (
+          <Distributors user={user} />
         ) : activeTab === 'distribution' ? (
           <Distribution user={user} />
         ) : activeTab === 'distributor_dashboard' || activeTab === 'distributor_orders' || activeTab === 'distributor_myorders' || activeTab === 'distributor_stock' ? (

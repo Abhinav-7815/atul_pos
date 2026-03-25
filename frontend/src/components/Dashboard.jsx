@@ -18,6 +18,7 @@ const MaterialIcon = ({ name, className = "", fill = false }) => (
 export default function Dashboard({ user, onNewOrder }) {
   const [stats, setStats] = useState(null);
   const [liveOrders, setLiveOrders] = useState([]);
+  const [recentTransactions, setRecentTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [voidingOrder, setVoidingOrder] = useState(null);
   const [voidPin, setVoidPin] = useState('');
@@ -27,13 +28,16 @@ export default function Dashboard({ user, onNewOrder }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, ordersRes] = await Promise.all([
-          analyticsApi.getDashboardStats({ outlet_id: user?.outlet_id }),
-          orderApi.getOrders({ status: 'confirmed,preparing,ready', limit: 5 })
+        const [statsRes, ordersRes, recentRes] = await Promise.all([
+          analyticsApi.getDashboardStats({ outlet: user?.outlet }),
+          orderApi.getOrders({ outlet: user?.outlet, status: 'confirmed,preparing,ready', limit: 5 }),
+          orderApi.getOrders({ outlet: user?.outlet, limit: 5 })
         ]);
         setStats(statsRes.data?.data || statsRes.data);
         const orderData = ordersRes.data?.data || ordersRes.data?.results || ordersRes.data;
         setLiveOrders(Array.isArray(orderData) ? orderData : []);
+        const recentData = recentRes.data?.data || recentRes.data?.results || recentRes.data;
+        setRecentTransactions(Array.isArray(recentData) ? recentData : []);
       } catch (err) {
         console.error("Dashboard data fetch failed", err);
       } finally {
@@ -323,26 +327,35 @@ export default function Dashboard({ user, onNewOrder }) {
                     </tr>
                 </thead>
                 <tbody className="text-xs font-sans text-atul-charcoal">
-                    {[
-                        { bill: '#INV-9023', time: '12:30 PM', items: 'Mango Pulp (1kg)', amount: '₹650', method: 'UPI', style: 'emerald' },
-                        { bill: '#INV-9022', time: '12:15 PM', items: '2x Choco Sundae', amount: '₹320', method: 'Cash', style: 'amber' },
-                        { bill: '#INV-9021', time: '12:10 PM', items: '1x Tub Mix', amount: '₹890', method: 'Card', style: 'primary' },
-                    ].map((tx) => (
-                        <tr key={tx.bill} className="border-b border-atul-pink_primary/5">
-                            <td className="px-6 py-3 font-bold text-[12px]">{tx.bill}</td>
-                            <td className="px-6 py-3 text-atul-charcoal/70 text-[12px]">{tx.time}</td>
-                            <td className="px-6 py-3 text-[12px] text-atul-charcoal/80 font-medium">{tx.items}</td>
-                            <td className="px-6 py-3 text-[14px] font-black tracking-tighter" style={{ fontFamily: '"Playfair Display", serif' }}>{tx.amount}</td>
+                    {recentTransactions.map((tx) => (
+                        <tr key={tx.id} className="border-b border-atul-pink_primary/5 hover:bg-atul-pink_primary/5 transition-colors">
+                            <td className="px-6 py-3 font-bold text-[12px]">{tx.order_number}</td>
+                            <td className="px-6 py-3 text-atul-charcoal/70 text-[12px]">
+                                {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="px-6 py-3 text-[12px] text-atul-charcoal/80 font-medium truncate max-w-[200px]">
+                                {tx.items.map(it => `${Math.round(it.quantity)}x ${it.product_name}`).join(', ')}
+                            </td>
+                            <td className="px-6 py-3 text-[14px] font-black tracking-tighter" style={{ fontFamily: '"Playfair Display", serif' }}>
+                                ₹{tx.total_amount}
+                            </td>
                             <td className="px-6 py-3 text-right">
                                 <span className={cn(
                                     "px-3 py-1.5 rounded-full font-bold uppercase text-[9px] tracking-widest",
-                                    tx.style === 'emerald' && "bg-emerald-100 text-emerald-700",
-                                    tx.style === 'amber' && "bg-amber-100 text-amber-700",
-                                    tx.style === 'primary' && "bg-[#FFE4EF] text-atul-pink_primary"
-                                )}>{tx.method}</span>
+                                    tx.payments && tx.payments[0]?.method === 'cash' ? "bg-amber-100 text-amber-700" :
+                                    tx.payments && tx.payments[0]?.method === 'upi' ? "bg-emerald-100 text-emerald-700" :
+                                    "bg-[#FFE4EF] text-atul-pink_primary"
+                                )}>
+                                    {tx.payments && tx.payments[0]?.method || (tx.payment_mode || 'Cash')}
+                                </span>
                             </td>
                         </tr>
                     ))}
+                    {recentTransactions.length === 0 && (
+                        <tr>
+                            <td colSpan="5" className="px-6 py-10 text-center text-atul-gray/40 text-[10px] font-bold uppercase tracking-[0.2em]">No transactions found</td>
+                        </tr>
+                    )}
                 </tbody>
             </table>
           </div>

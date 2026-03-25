@@ -13,7 +13,11 @@ class ShiftViewSet(viewsets.ModelViewSet):
     serializer_class = CashierShiftSerializer
 
     def get_queryset(self):
-        return CashierShift.objects.filter(outlet=self.request.user.outlet)
+        user = self.request.user
+        if not user.is_authenticated or not hasattr(user, 'outlet'):
+             return CashierShift.objects.none()
+        return CashierShift.objects.filter(outlet=user.outlet)
+
 
     @action(detail=False, methods=['post'], url_path='open')
     def open_shift(self, request):

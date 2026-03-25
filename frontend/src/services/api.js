@@ -25,7 +25,16 @@ export const authApi = {
 
 export const menuApi = {
   getCategories: () => api.get('/menu/categories/'),
+  createCategory: (data) => api.post('/menu/categories/', data),
+  updateCategory: (id, data) => api.patch(`/menu/categories/${id}/`, data),
+  deleteCategory: (id) => api.delete(`/menu/categories/${id}/`),
   getProducts: (params) => api.get('/menu/products/', { params }),
+  createProduct: (data) => api.post('/menu/products/', data),
+  updateProduct: (id, data) => api.patch(`/menu/products/${id}/`, data),
+  deleteProduct: (id) => api.delete(`/menu/products/${id}/`),
+  createVariant: (data) => api.post('/menu/variants/', data), // Need to check if this exists
+  updateVariant: (id, data) => api.patch(`/menu/variants/${id}/`, data),
+  deleteVariant: (id) => api.delete(`/menu/variants/${id}/`),
 };
 
 export const orderApi = {
@@ -76,6 +85,32 @@ export const outletApi = {
   getOutlet: (id) => api.get(`/outlets/${id}/`),
   createOutlet: (data) => api.post('/outlets/', data),
   updateOutlet: (id, data) => api.patch(`/outlets/${id}/`, data),
+};
+
+export const distributorMgmtApi = {
+  // List distributors with optional filters
+  getDistributors: (params) => api.get('/outlets/', { params: { outlet_type: 'distributor', ...params } }),
+  getDistributor:  (id)     => api.get(`/outlets/${id}/`),
+
+  // Create outlet + manager in one shot
+  createDistributor: (data) => api.post('/outlets/create_distributor/', data),
+
+  // Update outlet fields (credit limit, discount, branch_type, etc.)
+  updateDistributor: (id, data) => api.patch(`/outlets/${id}/`, data),
+
+  // Toggle active status
+  toggleActive: (id, is_active) => api.patch(`/outlets/${id}/`, { is_active }),
+
+  // Delete distributor outlet
+  deleteDistributor: (id) => api.delete(`/outlets/${id}/`),
+
+  // Stats summary
+  getStats: () => api.get('/outlets/distributor_stats/'),
+
+  // Staff/manager for an outlet
+  getOutletStaff: (outlet_id) => api.get('/users/', { params: { outlet: outlet_id } }),
+  createUser:  (data)         => api.post('/users/', data),
+  updateUser:  (id, data)     => api.patch(`/users/${id}/`, data),
 };
 
 export const distributionApi = {

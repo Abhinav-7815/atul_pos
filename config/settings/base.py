@@ -10,7 +10,14 @@ SECRET_KEY = 'django-insecure-replace-this-with-something-secure'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+# Explicitly add common origins just in case ALL_ORIGINS has issues with some browsers
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -123,7 +130,7 @@ REST_FRAMEWORK = {
 }
 
 # CORS Settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only
+# CORS Settings moved up
 
 # JWT Settings
 from datetime import timedelta

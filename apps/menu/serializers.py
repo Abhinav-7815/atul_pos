@@ -15,11 +15,12 @@ class ModifierGroupSerializer(serializers.ModelSerializer):
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     is_available = serializers.SerializerMethodField()
-    price_delta = serializers.SerializerMethodField()
+    # Read-only field for outlet-specific price (overrides)
+    current_price = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductVariant
-        fields = ['id', 'name', 'price_delta', 'is_default', 'is_available']
+        fields = ['id', 'name', 'price_delta', 'is_default', 'is_available', 'current_price']
 
     def get_is_available(self, obj):
         outlet = self.context.get('outlet')
@@ -27,14 +28,14 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.is_available if status else True
 
-    def get_price_delta(self, obj):
+    def get_current_price(self, obj):
         outlet = self.context.get('outlet')
         if not outlet: return obj.price_delta
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.price_override if (status and status.price_override is not None) else obj.price_delta
 
 class ProductSerializer(serializers.ModelSerializer):
-    variants = ProductVariantSerializer(many=True, read_only=True)
+    variants = ProductVariantSerializer(many=True, required=False)
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
     category_name = serializers.ReadOnlyField(source='category.name')
     is_available = serializers.SerializerMethodField()
@@ -61,6 +62,30 @@ class ProductSerializer(serializers.ModelSerializer):
         if not outlet: return obj.base_price
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.price_override if (status and status.price_override is not None) else obj.base_price
+
+    def create(self, validated_data):
+        variants_data = validated_data.pop('variants', [])
+        product = Product.objects.create(**validated_data)
+        for variant_data in variants_data:
+            ProductVariant.objects.create(product=product, **variant_data)
+        return product
+
+    def update(self, instance, validated_data):
+        variants_data = validated_data.pop('variants', None)
+        
+        # Update product instance
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if variants_data is not None:
+            # Simple approach: delete existing and recreates
+            # or match by ID. Keeping it simple for now.
+            instance.variants.all().delete()
+            for variant_data in variants_data:
+                ProductVariant.objects.create(product=instance, **variant_data)
+        
+        return instance
 
 class CategorySerializer(serializers.ModelSerializer):
     products = ProductSerializer(many=True, read_only=True)

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_.MainWindowTitle -like ''*vite*'' -or $_.ProcessName -like ''*python*'' -or $_.ProcessName -like ''*node*'' } | Select-Object ProcessName, Id, MainWindowTitle\")",
+      "Bash(python manage.py showmigrations outlets accounts distribution)",
+      "Bash(python manage.py shell -c \"from apps.outlets.models import Outlet; [print\\(f''ID: {o.id} | Name: {o.name} | Type: {o.outlet_type}''\\) for o in Outlet.objects.all\\(\\)]\")",
+      "Bash(python manage.py shell -c \":*)",
+      "Bash(python manage.py showmigrations outlets)",
+      "Bash(python manage.py makemigrations outlets --name=\"outlet_branch_type_and_active\")",
+      "Bash(python manage.py migrate)",
+      "Bash(python manage.py check)"
+    ]
+  }
+}

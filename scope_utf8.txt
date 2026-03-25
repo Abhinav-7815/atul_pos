@@ -1,0 +1,600 @@
+﻿≡ƒìª
+ATUL ICE CREAM
+Ultra Luxury Point of Sale System
+Complete Project Scope, Modules & Django Architecture
+Established 1990  |  Version 1.0  |  March 2026  |  Internal Document
+Table of Contents
+1. Executive Summary
+2. Project Vision & Goals
+3. Color & Design System (Brand-Derived)
+4. Module Overview ΓÇö All 18 Modules
+5. Module Details
+   5.1  Cashier & Order Management
+   5.2  Menu & Product Management
+   5.3  Kitchen Display System (KDS)
+   5.4  Inventory & Stock Management
+   5.5  Customer Loyalty & CRM
+   5.6  Multi-Outlet & Franchise Management
+   5.7  Analytics & Business Intelligence
+   5.8  Billing, Invoicing & GST Engine
+   5.9  Staff & Shift Management
+   5.10 Online Orders & Delivery Integration
+   5.11 Promotions & Campaign Engine
+   5.12 Wastage & Expiry Tracker
+   5.13 Supplier & Procurement Management
+   5.14 Table & Queue Management
+   5.15 Digital Signage & Menu Board
+   5.16 Hardware & Device Integration
+   5.17 Admin, Roles & Permissions
+   5.18 AI-Powered Assistant & Insights
+6. Django Technical Architecture
+7. Database Design Strategy
+8. API Architecture
+9. Security Framework
+10. Deployment Architecture
+11. Technology Stack
+12. Development Roadmap & Milestones
+13. Competitive Differentiators vs. Pet Pooja
+1. Executive Summary
+Atul Ice Cream, established in 1990 and one of India's most beloved ice cream brands, requires a next-generation Point of Sale system that matches its premium brand identity. This document defines the complete scope for building an ultra-luxury, full-featured Django-based POS system designed to exceed the capabilities of existing solutions like Pet Pooja, Petoo, and Posist.
+This POS system will serve as the operational backbone for all Atul Ice Cream outlets ΓÇö from standalone parlours to franchise chains ΓÇö delivering a silky, rose-gold-tinted UI with enterprise-grade functionality, real-time analytics, and AI-assisted insights. The system is purpose-built for the frozen desserts industry with deep understanding of its inventory cycles, seasonal demand patterns, and customer behavior.
+2. Project Vision & Goals
+Vision
+To build the most beautiful and functionally superior POS system ever deployed in the Indian ice cream & quick-service restaurant (QSR) segment ΓÇö a system that staff love to use, managers trust completely, and owners can rely on for strategic decisions.
+Primary Goals
+Replace dependency on generic POS software like Pet Pooja with a brand-native solution
+Deliver real-time, multi-outlet visibility for franchise owners and area managers
+Reduce billing errors and revenue leakage through intelligent reconciliation
+Build a loyalty ecosystem that rewards frequent customers and drives repeat footfall
+Enable AI-driven demand forecasting to reduce ice cream wastage ΓÇö a critical metric
+Provide a stunning, on-brand UI that reinforces Atul Ice Cream's premium identity
+Success Metrics
+Average billing time reduced from 3ΓÇô4 minutes to under 60 seconds
+Inventory accuracy improved from ~80% to 99%+ with real-time deduction
+Customer loyalty program enrollment rate > 40% of daily transactions
+Wastage reduction of at least 20% via expiry tracking and AI forecasting
+Zero billing discrepancies on daily reconciliation reports
+3. Color & Design System (Brand-Derived)
+The UI design system is derived from the Atul Ice Cream brand palette as analyzed from the official landing page (atulicecream.com). The palette uses warm pinks, soft creams, and deep charcoals ΓÇö evoking luxury, sweetness, and trustworthiness.
+Role
+Hex Code
+Usage
+Primary Action Pink
+#D63384
+CTAs, active nav, primary buttons
+Deep Rose
+#C2185B
+Headings, hover states, emphasis
+Soft Blush
+#FFE4EF
+Background fills, card shading
+Warm Cream
+#FFF5F8
+Page backgrounds, table alternates
+Charcoal Dark
+#1A1A2E
+Body text, headings
+Medium Gray
+#6B7280
+Subtext, placeholders, borders
+Pure White
+#FFFFFF
+Cards, modals, inputs
+Mango Accent
+#FFA726
+Warnings, popular item badges
+Mint Green
+#4CAF50
+Success states, available stock
+Error Red
+#EF5350
+Alerts, low stock, void actions
+Typography: Playfair Display (headings, display text) + Inter (UI elements, body) ΓÇö mirroring the elegance-meets-functionality brand voice.
+4. Module Overview ΓÇö All 18 Modules
+Module #
+Module Name
+Description
+M-01
+Cashier & Order Management
+Core billing engine with touch-first, fast-order POS screen
+M-02
+Menu & Product Management
+Dynamic product catalog with variants, toppings, and combos
+M-03
+Kitchen Display System (KDS)
+Real-time order display for kitchen staff with priority queue
+M-04
+Inventory & Stock Management
+Real-time stock tracking with automatic deduction per sale
+M-05
+Customer Loyalty & CRM
+Points, tiers, birthday offers, and customer profile management
+M-06
+Multi-Outlet & Franchise Mgmt
+Centralized control for all branches with individual P&L views
+M-07
+Analytics & Business Intelligence
+Rich dashboards, sales trends, and peak hour analytics
+M-08
+Billing, Invoicing & GST Engine
+GST-compliant billing, e-invoicing, and financial reconciliation
+M-09
+Staff & Shift Management
+Employee scheduling, attendance, and performance tracking
+M-10
+Online Orders & Delivery Integration
+Swiggy, Zomato, and direct web/app order aggregation
+M-11
+Promotions & Campaign Engine
+Discount rules, BOGO offers, combo deals, and flash sales
+M-12
+Wastage & Expiry Tracker
+Ice cream shelf-life tracking with waste log and alerts
+M-13
+Supplier & Procurement Management
+Purchase orders, GRN, vendor performance, and payment tracking
+M-14
+Table & Queue Management
+Table map, token system, waitlist, and dine-in flow
+M-15
+Digital Signage & Menu Board
+Outlet-specific digital displays driven from the POS backend
+M-16
+Hardware & Device Integration
+Printer, cash drawer, barcode scanner, weighing scale support
+M-17
+Admin, Roles & Permissions
+Granular access control for owner, manager, cashier, kitchen roles
+M-18
+AI-Powered Assistant & Insights
+Demand forecasting, reorder alerts, and conversational BI queries
+5. Module Details
+M-01: Cashier & Order Management
+The heart of the POS system. Designed for single-touch speed ΓÇö a cashier should be able to bill a 3-item order in under 20 seconds.
+Core Features
+Full-screen touch-optimized order interface with visual product grid
+Quick-add buttons for top-10 bestsellers per outlet
+Multi-order session support ΓÇö hold and resume orders
+Order types: Dine-In, Takeaway, Parcel, Delivery, Drive-Through
+Split bill ΓÇö divide by items or custom amount across customers
+Bill modification ΓÇö edit, delete line items before payment
+Void and refund workflow with manager authorization OTP
+Order notes per item (e.g., 'no cone', 'extra sprinkles')
+Customer quick-attach ΓÇö look up loyalty member at billing time
+Multi-currency support and multi-payment tender in one bill
+Payment Methods
+Cash with automatic change calculation
+UPI (direct QR generation per order via Razorpay/PhonePe API)
+Debit/Credit card via integrated EDC terminal
+Loyalty points redemption (partial or full payment)
+Prepaid Atul Ice Cream wallet top-up and redemption
+Corporate invoice / credit accounts for bulk buyers
+Coupon code and voucher redemption with real-time validation
+M-02: Menu & Product Management
+A flexible, multi-dimensional product catalog supporting the complexity of an ice cream parlour menu ΓÇö where every scoop can have a different flavor, size, cone, topping, and sauce combination.
+Core Features
+Hierarchical categories: Scoops, Sundaes, Shakes, Cones, Waffles, Cakes, Packaged
+Product variants: size (small/regular/large/jumbo), flavor, base (cone/cup/waffle)
+Modifier groups: toppings, sauces, sprinkles, add-ons with pricing rules
+Combo builder ΓÇö bundle products with dynamic pricing and rules
+Time-based availability (seasonal items, happy hour specials)
+Outlet-specific menu ΓÇö enable/disable items per branch
+Product images with lazy-load and CDN hosting
+Allergen tagging (nuts, dairy, gluten) with visual badges
+Nutritional information panel per product
+Bulk menu update via CSV/Excel import
+Product performance scoring ΓÇö auto-flag slow-movers for review
+M-03: Kitchen Display System (KDS)
+Real-time order display replacing paper tickets, reducing miscommunication between cashier and kitchen staff.
+Core Features
+Live order cards displayed on kitchen screen (TV/tablet)
+Color-coded urgency: Green (new) ΓåÆ Yellow (2 min+) ΓåÆ Red (5 min+)
+Order type badges: Dine-In, Takeaway, Delivery clearly visible
+One-tap item completion ΓÇö mark individual items as ready
+Order bump to notify cashier when order is complete
+Preparation time tracking per order type and product category
+Station routing ΓÇö route waffle orders to waffle station, shakes to shake counter
+Sound alerts for new orders, delayed orders
+Daily avg. preparation time analytics for staff performance
+M-04: Inventory & Stock Management
+Real-time inventory tracking with automatic deduction per sale ΓÇö critical for a perishable, frozen goods business.
+Core Features
+Raw material inventory: milk, cream, fruit pulps, cones, cups, etc.
+Finished goods inventory: packaged ice cream tubs, sticks, bars
+Bill of Materials (BOM) per product ΓÇö automatic raw material deduction on each sale
+Low stock alerts with configurable threshold per SKU per outlet
+Dead stock identification ΓÇö items with zero movement for 7+ days
+Stock transfer between outlets with approval workflow
+Daily opening stock entry and closing stock audit
+Variance report ΓÇö compare expected vs. actual stock
+Batch tracking with manufacturing date and expiry date
+Temperature-sensitive storage zones (freezer, chiller, dry) tracked separately
+M-05: Customer Loyalty & CRM
+A comprehensive customer relationship system to drive repeat visits and increase average order value.
+Core Features
+Customer registration at POS or via self-service kiosk / app
+Tiered loyalty program: Scoop Lover ΓåÆ Sundae Star ΓåÆ Ice Cream Royalty
+Points earning rules: 1 point per Γé╣10, 2x on weekdays, 3x on birthdays
+Points redemption at POS with minimum threshold and expiry rules
+Birthday automation: auto-offer (free scoop voucher) 3 days before birthday
+Anniversary rewards and milestone rewards (100th visit free sundae)
+Customer purchase history with favorite items and average spend
+SMS and WhatsApp notification integration via Twilio / MSG91
+Bulk campaign sender ΓÇö target customers by tier, last visit, favorite flavor
+Feedback collection via QR code on receipt, linked to order
+M-06: Multi-Outlet & Franchise Management
+Centralized command center for Atul Ice Cream's growing franchise network.
+Core Features
+Single login with outlet switcher ΓÇö no separate credentials per store
+Franchise owner portal: limited to own outlets; HQ sees all
+Centralized menu management with outlet-level override permissions
+Cross-outlet sales comparison dashboard: revenue, footfall, AOV side-by-side
+Outlet-wise P&L summary with drill-down to item-level contribution
+Royalty fee calculator for franchise model (% of revenue)
+Recipe and SOP document library shared across all outlets
+Inter-outlet stock transfer with full audit trail
+Outlet performance score (KPI-based) with monthly ranking
+New outlet onboarding wizard ΓÇö configure menu, staff, devices in one flow
+M-07: Analytics & Business Intelligence
+Deep, actionable analytics designed for both daily operations and strategic decision-making.
+Dashboards
+Live Dashboard: current day revenue, orders, avg. bill, top item ΓÇö auto-refreshes every 60 seconds
+Sales Analytics: hourly heatmap, day-wise trends, monthly comparison, year-over-year
+Product Analytics: bestsellers, least-sold, flavor preferences by outlet, seasonal trends
+Customer Analytics: new vs. returning, loyalty tier distribution, top spenders
+Staff Analytics: orders billed per staff, avg. bill, shift performance
+Inventory Analytics: stock turnover ratio, wastage %, procurement frequency
+Reports (exportable PDF / Excel)
+Daily Sales Summary, Z-Report, X-Report
+GST Return Summary (GSTR-1 ready data)
+Product Mix Report, Category Performance Report
+Staff Performance Report, Attendance & Payroll Summary
+Inventory Consumption Report, Wastage & Expiry Report
+Customer Lifetime Value Report, Loyalty Points Liability Report
+M-08: Billing, Invoicing & GST Engine
+GST-compliant billing engine built specifically for the Indian F&B industry.
+Core Features
+Automatic GST calculation: 5% for restaurants, 12% for packaged goods
+CGST + SGST split for intra-state; IGST for inter-state transactions
+HSN code assignment per product category
+E-invoice generation (IRN + QR code) for B2B transactions above threshold
+Thermal receipt printing: 58mm and 80mm printer support
+A4 GST invoice for corporate and bulk orders
+Proforma invoice generation for pre-orders
+Daily/weekly/monthly reconciliation with discrepancy flagging
+Pending payment tracking for credit customers
+Petty cash register integration
+M-09: Staff & Shift Management
+Complete workforce management for parlour staff, floor managers, and delivery personnel.
+Core Features
+Staff profiles with role assignment, outlet mapping, and document storage
+Shift scheduling with daily/weekly view and drag-drop interface
+Biometric / PIN-based clock-in and clock-out at POS terminal
+Overtime calculation with configurable rules
+Performance metrics: orders/hour, avg. bill size, upsell rate per staff
+Incentive engine: reward top-performing cashiers automatically
+Payroll summary export compatible with Tally and Excel
+Leave management with approval workflow for managers
+Training completion tracker per staff member
+M-10: Online Orders & Delivery Integration
+Aggregate and manage all online order channels from a single POS interface.
+Supported Integrations
+Swiggy: menu sync, order receive, status update via Swiggy Partner API
+Zomato: real-time order injection with prep time management
+Atul Ice Cream own app / website: direct orders via REST API
+WhatsApp ordering: order confirmation and tracking via WhatsApp Business API
+Workflow Features
+Unified order queue ΓÇö dine-in, takeaway, and delivery on the same screen
+Automatic outlet assignment for delivery orders based on geo-radius
+Delivery rider assignment and tracking integration (Dunzo, Shadowfax, own fleet)
+Order acceptance timeout with auto-rejection and customer notification
+Menu availability sync ΓÇö when an item runs out, auto-disable on aggregators
+Packaging instructions and delivery notes per order type
+M-11: Promotions & Campaign Engine
+A sophisticated discount and promotion engine to support Atul Ice Cream's marketing team without developer involvement.
+Promotion Types
+Flat discount: Γé╣ amount or % off entire bill or specific categories
+Buy X Get Y: Buy 2 scoops, get 1 topping free
+Combo deals: Sundae + Shake at Γé╣199 instead of Γé╣249
+Happy Hour: 20% off 3 PM to 5 PM on weekdays
+Threshold offers: Spend Γé╣500, get Γé╣50 off
+Birthday / anniversary special offers from CRM module
+Coupon codes: single-use, multi-use, customer-specific, batch-generated
+Flash sales: time-limited offers with countdown on POS screen
+Rules Engine
+Priority and conflict resolution (highest discount wins / stackability rules)
+Outlet and time-slot restrictions per promotion
+Auto-expiry with campaign performance report post-completion
+M-12: Wastage & Expiry Tracker
+Ice cream has a short shelf life once scooped or opened. This module is uniquely critical for the frozen desserts category.
+Core Features
+Batch-level expiry tracking: every stock-in entry has a manufacturing + expiry date
+FEFO (First Expired, First Out) alerts at billing to ensure older stock is used first
+Daily wastage entry form: quantity, reason (melted, damaged, over-prep, expired)
+Wastage cost calculation: auto-multiply with purchase cost for P&L impact
+Pre-expiry alerts: 3 days, 1 day, same-day notifications to outlet manager
+Temperature excursion log: if cold chain is broken, flag affected batches
+Monthly wastage trend analysis and comparison across outlets
+Smart prep suggestion: suggest how much to prepare based on historical demand + weather
+M-13: Supplier & Procurement Management
+End-to-end procurement lifecycle from vendor onboarding to payment tracking.
+Core Features
+Vendor master: contact, bank details, GST number, product categories supplied
+Purchase order creation with multi-item, multi-vendor support
+PO approval workflow: store manager ΓåÆ area manager ΓåÆ HQ
+Goods Received Note (GRN) with quantity verification and quality check flag
+Automatic inventory update on GRN approval
+Invoice matching: PO vs. GRN vs. supplier invoice (3-way match)
+Vendor payment tracking with due date alerts
+Vendor performance scorecard: on-time delivery %, quality rejection %
+Auto-reorder suggestion: when stock falls below reorder level, draft PO automatically
+M-14: Table & Queue Management
+Smooth dine-in experience management for parlour-style seating areas.
+Core Features
+Visual table map editor: drag-drop layout matching actual parlour floor plan
+Table status: Available (green), Occupied (pink), Reserved (yellow), Cleaning (gray)
+Table timer: track how long a table has been occupied
+Waiter assignment per table with performance tracking
+Token/queue system for takeaway: auto-generate token number, display on screen
+Waitlist management: add walk-in customers, estimate wait time, send SMS when ready
+Table merge and split for large groups
+Cover count tracking for accurate per-cover analytics
+Reservation system: phone/app bookings linked to table map
+M-15: Digital Signage & Menu Board
+POS-driven digital displays for a premium in-store visual experience.
+Core Features
+Live digital menu board: displays current menu, prices, and availability
+Out-of-stock items auto-greyed when stock hits zero
+Promotional carousel: banner ads for current offers cycle automatically
+Queue display: show token numbers being served on customer-facing screen
+Seasonal or time-of-day content switching (e.g., summer specials in May)
+Outlet-specific content management from HQ or local manager
+Screen templates: landscape and portrait orientations for different display types
+Content scheduling: set exact times for each content piece to appear
+M-16: Hardware & Device Integration
+Seamless integration with all POS hardware peripherals typically found in an ice cream parlour.
+Supported Hardware
+Thermal receipt printers: Epson TM-T88, TVS RP3250, Urovo RT series (ESC/POS commands)
+Cash drawer: auto-trigger on cash payment, manual open with manager PIN
+Barcode / QR code scanner: scan packaged product barcodes for instant add-to-cart
+Customer-facing display (CFD): show order summary and amount to customer
+Weighing scale integration: for weight-based items (ice cream cakes, bulk tubs)
+Fingerprint scanner: for staff clock-in and manager authorization
+Card payment terminal (EDC): integration via serial/USB with leading bank terminals
+IP camera integration: CCTV feed accessible from dashboard for security
+Software Interfaces
+Android tablet POS app (companion to Django backend)
+Web POS: Chrome-based full-screen mode for desktop terminals
+Offline mode: local SQLite cache for uninterrupted billing during internet outage, sync on reconnect
+M-17: Admin, Roles & Permissions
+Granular, role-based access control to ensure every user sees and can do exactly what their role requires ΓÇö nothing more.
+Default Role Hierarchy
+Super Admin (HQ): full access to all outlets, all modules, all data
+Owner/Director: financial reports, outlet comparison, strategy dashboards (read-heavy)
+Area Manager: assigned outlets only, staff management, inventory oversight
+Outlet Manager: own outlet full access, cannot modify pricing or system settings
+Cashier/Billing Staff: order management, billing, customer lookup ΓÇö no admin access
+Kitchen Staff: KDS view only ΓÇö no billing or inventory access
+Inventory Manager: stock management, procurement, no billing access
+Delivery Manager: delivery order queue, rider assignment
+Permission Engine
+Permission sets can be customized per user (role-override for exceptions)
+Action-level permissions: view, create, edit, delete, approve, export
+Module-level on/off toggles per role
+Audit log: every create/update/delete recorded with user, timestamp, and IP
+Two-factor authentication (TOTP) for Admin and Owner roles
+M-18: AI-Powered Assistant & Insights
+This is the feature that sets the Atul Ice Cream POS far ahead of Pet Pooja and every other off-the-shelf solution in the market.
+AI Features
+Demand Forecasting: ML model trained on 2+ years of sales data predicts next-day demand per flavor per outlet (accounts for weather, day-of-week, holidays, local events)
+Smart Reorder: auto-generate draft POs when predicted demand exceeds current stock + scheduled deliveries
+Waste Prediction: identify which batches are at risk of wastage based on prep quantities vs. predicted sales
+Upsell Suggestions: suggest 'Add a topping?' or 'Upgrade to large?' based on current cart items and customer history
+Conversational BI: ask in plain English 'What was our best-selling flavor last Sunday afternoon?' ΓÇö powered by OpenAI GPT-4 with access to the analytics layer
+Anomaly Detection: flag unusual drops in sales, unexpected spikes in wastage, or suspicious void patterns
+Flavor Trend Analysis: emerging flavor preferences across customer cohorts
+Optimal Pricing Suggestion: elasticity-based pricing hints for seasonal items
+6. Django Technical Architecture
+Project Structure
+atul_pos/                          ΓåÉ Django project root
+Γö£ΓöÇΓöÇ config/                        ΓåÉ Settings, URLs, WSGI/ASGI
+Γöé   Γö£ΓöÇΓöÇ settings/                  ΓåÉ base.py, dev.py, prod.py, test.py
+Γöé   ΓööΓöÇΓöÇ urls.py                    ΓåÉ Root URL dispatcher
+Γö£ΓöÇΓöÇ apps/
+Γöé   Γö£ΓöÇΓöÇ core/                      ΓåÉ Shared models, mixins, utils
+Γöé   Γö£ΓöÇΓöÇ accounts/                  ΓåÉ Custom User model, roles, permissions
+Γöé   Γö£ΓöÇΓöÇ outlets/                   ΓåÉ Outlet & franchise management
+Γöé   Γö£ΓöÇΓöÇ menu/                      ΓåÉ Products, categories, modifiers
+Γöé   Γö£ΓöÇΓöÇ orders/                    ΓåÉ Order lifecycle, billing engine
+Γöé   Γö£ΓöÇΓöÇ payments/                  ΓåÉ Payment methods, reconciliation
+Γöé   Γö£ΓöÇΓöÇ inventory/                 ΓåÉ Stock, batches, BOM, transfers
+Γöé   Γö£ΓöÇΓöÇ procurement/               ΓåÉ Vendors, POs, GRNs
+Γöé   Γö£ΓöÇΓöÇ customers/                 ΓåÉ CRM, loyalty, campaigns
+Γöé   Γö£ΓöÇΓöÇ staff/                     ΓåÉ Employees, shifts, payroll
+Γöé   Γö£ΓöÇΓöÇ analytics/                 ΓåÉ Reports, dashboards, data aggregation
+Γöé   Γö£ΓöÇΓöÇ promotions/                ΓåÉ Discount rules engine
+Γöé   Γö£ΓöÇΓöÇ kds/                       ΓåÉ Kitchen Display System (WebSocket)
+Γöé   Γö£ΓöÇΓöÇ signage/                   ΓåÉ Digital signage content management
+Γöé   Γö£ΓöÇΓöÇ integrations/              ΓåÉ Swiggy, Zomato, payment gateways
+Γöé   ΓööΓöÇΓöÇ ai_insights/               ΓåÉ ML models, forecasting, GPT assistant
+Γö£ΓöÇΓöÇ api/                           ΓåÉ DRF viewsets, serializers, routers
+Γö£ΓöÇΓöÇ templates/                     ΓåÉ Django templates for server-side views
+Γö£ΓöÇΓöÇ static/                        ΓåÉ CSS, JS, images (collected to CDN)
+Γö£ΓöÇΓöÇ media/                         ΓåÉ User-uploaded files (S3 in production)
+Γö£ΓöÇΓöÇ tasks/                         ΓåÉ Celery async tasks
+Γö£ΓöÇΓöÇ tests/                         ΓåÉ Unit, integration, E2E tests
+ΓööΓöÇΓöÇ manage.py
+7. Database Design Strategy
+Database Engine
+PostgreSQL 15+ as the primary database. Redis for caching, session management, and Celery task queue. Elasticsearch for product search and analytics aggregation.
+Key Design Principles
+Multi-tenancy via outlet_id foreign key on all transactional models ΓÇö no row-level security until needed
+Soft deletes across all critical models (is_active / deleted_at) ΓÇö data is never hard-deleted
+UUID primary keys for all public-facing models to prevent enumeration attacks
+Audit mixin (created_by, updated_by, created_at, updated_at) on every model
+Decimal(10,2) for all monetary values ΓÇö never float
+JSON fields for flexible attributes (product extras, custom order metadata)
+Database-level constraints on critical business rules (non-negative stock, valid date ranges)
+Core Model Relationships
+Outlet (1) ΓåÆ (M) Staff, Menu, Orders, Inventory
+Order (1) ΓåÆ (M) OrderItem ΓåÆ (M) OrderItemModifier
+Product (1) ΓåÆ (M) ProductVariant ΓåÆ (M) BOMIngredient ΓåÆ (1) Ingredient
+Customer (1) ΓåÆ (M) Transaction, LoyaltyPoints, Feedback
+StockBatch (M) ΓåÆ (1) Ingredient | tracked via FEFO
+8. API Architecture
+Django REST Framework (DRF) with drf-spectacular for OpenAPI 3.0 documentation. API versioning via URL namespace (/api/v1/, /api/v2/).
+API Categories
+Public API: Menu display, digital signage content (no auth)
+POS API: Order management, billing, KDS ΓÇö JWT auth, rate-limited
+Management API: Inventory, staff, analytics ΓÇö role-gated
+Integration API: Swiggy/Zomato webhooks ΓÇö HMAC signature verification
+Admin API: System configuration, tenant management ΓÇö IP-whitelisted
+Real-Time Features
+Django Channels + WebSocket for KDS live order updates
+WebSocket for live dashboard auto-refresh (sales counter, queue display)
+Server-Sent Events (SSE) for digital signage content updates
+Celery + Redis for async tasks: report generation, email/SMS dispatch, AI inference
+9. Security Framework
+JWT authentication with 15-minute access tokens and 7-day refresh tokens
+Role-based permission classes on every DRF viewset
+TOTP two-factor authentication for admin accounts
+Database-level encryption for PII fields (customer phone, email) using django-pgcrypto
+HTTPS enforced everywhere; HSTS preloading
+CSRF protection on all state-changing endpoints
+SQL injection prevention via ORM parameterized queries only
+Rate limiting per endpoint per user (django-ratelimit)
+Complete audit trail ΓÇö every data mutation logged to audit_log table
+PCI-DSS considerations: no raw card data stored; tokenization via payment gateway
+GDPR/PDPA-ready: customer data export and deletion endpoints
+10. Deployment Architecture
+Cloud Infrastructure (AWS Recommended)
+EC2 / ECS (Fargate): Django application servers in auto-scaling group
+RDS PostgreSQL (Multi-AZ): managed database with automated daily backups
+ElastiCache Redis: session, cache, Celery broker
+S3 + CloudFront: static files and media with CDN
+Application Load Balancer with SSL termination
+Route 53: DNS management with health checks
+On-Premise Outlet Setup
+Each outlet runs a local POS client (Electron app or browser-based)
+Offline-first: local SQLite cache for uninterrupted billing during internet outage
+Auto-sync when connection is restored: conflict resolution via last-write-wins with flagging
+Local receipt printing via direct ESC/POS commands ΓÇö no cloud dependency for printing
+11. Technology Stack
+Layer
+Technology
+Purpose
+Backend
+Django 5.x + DRF
+Core API and business logic
+Async
+Django Channels 4
+WebSocket (KDS, live dashboard)
+Task Queue
+Celery + Redis
+Async jobs, scheduled reports
+Database
+PostgreSQL 15
+Primary relational store
+Cache
+Redis 7
+Session, cache, rate limiting
+Search
+Elasticsearch 8
+Product search, analytics
+Frontend POS
+React + Tailwind
+Touch-first POS UI
+Admin Panel
+React + shadcn/ui
+Management dashboards
+Mobile
+React Native
+Manager app, customer app
+AI / ML
+Python scikit-learn + OpenAI GPT-4
+Forecasting, BI assistant
+File Storage
+AWS S3 + CloudFront
+Images, exports, receipts
+Payments
+Razorpay API
+UPI, card, wallet integration
+SMS / WhatsApp
+MSG91 / Twilio
+Customer notifications
+Monitoring
+Sentry + Datadog
+Error tracking, APM
+CI/CD
+GitHub Actions + Docker
+Automated deployment
+12. Development Roadmap & Milestones
+Phase
+Timeline
+Deliverables
+Modules
+Phase 1
+Months 1ΓÇô2
+Core billing, menu, GST engine, hardware integration, basic auth
+M-01, M-02, M-08, M-16, M-17
+Phase 2
+Months 3ΓÇô4
+Inventory, KDS, staff management, wastage tracking
+M-03, M-04, M-09, M-12
+Phase 3
+Months 5ΓÇô6
+CRM, loyalty, promotions, table & queue management
+M-05, M-11, M-14
+Phase 4
+Months 7ΓÇô8
+Multi-outlet, analytics dashboards, procurement, supplier mgmt
+M-06, M-07, M-13
+Phase 5
+Months 9ΓÇô10
+Online order integrations, digital signage
+M-10, M-15
+Phase 6
+Months 11ΓÇô12
+AI insights, demand forecasting, GPT BI assistant, full optimization
+M-18
+13. Competitive Differentiators vs. Pet Pooja
+Feature / Capability
+Pet Pooja
+Atul Ice Cream POS
+UI Design Quality
+Generic, dated interface
+Luxury brand-matched, touch-first UI
+Ice Cream-Specific Inventory
+Generic restaurant stock
+FEFO, batch expiry, cold chain tracking
+AI / Demand Forecasting
+None
+ML model with weather + event correlation
+Wastage Analytics
+Basic wastage entry
+Smart prep suggestions + cost impact
+Conversational BI
+Not available
+Ask in plain English, get instant chart
+Flavor / Variant Depth
+Limited modifiers
+Unlimited variant + topping matrix
+Digital Signage Integration
+Not integrated
+Real-time menu board from same system
+White-label / Brand-native
+Pet Pooja branding
+100% Atul Ice Cream branded
+Offline Reliability
+Limited offline
+Full offline billing + background sync
+Loyalty Tier Engine
+Basic points
+Multi-tier, birthday, milestone rewards
+GST E-Invoicing
+Basic GST
+Full IRN + QR + GSTR-1 data export
+Franchise Multi-Outlet BI
+Basic
+Full P&L per outlet + royalty calculator
+≡ƒìª  Atul Ice Cream POS ΓÇö Prepared with Γ¥ñ∩╕Å  |  Document Version 1.0  |  March 2026  |  Confidential
