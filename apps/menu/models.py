@@ -16,7 +16,14 @@ class Category(BaseModel):
         return self.name
 
 class Product(BaseModel):
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products")
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+        help_text="Products without a category will appear as 'Uncategorized'"
+    )
     outlet = models.ForeignKey(
         Outlet, 
         on_delete=models.SET_NULL, 
@@ -88,3 +95,7 @@ class OutletVariantStatus(BaseModel):
 
     class Meta:
         unique_together = ('variant', 'outlet')
+
+
+# Import AI cost tracking models
+from apps.menu.models_ai_cost import AIImageGenerationCost, AIImageGenerationBudget

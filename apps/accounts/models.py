@@ -3,17 +3,27 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils import timezone
 from apps.outlets.models import Outlet
+from django.db.models import Q
 
 class UserRole(models.TextChoices):
+    """User roles with hierarchy"""
+    # Super Admin (Platform Level)
     SUPERADMIN = 'superadmin', 'Super Admin'
+
+    # Client Admin (Organization Level)
+    CLIENT_ADMIN = 'client_admin', 'Client Admin'
     OWNER = 'owner', 'Owner'
+
+    # Management Level
     AREA_MANAGER = 'area_manager', 'Area Manager'
     OUTLET_MANAGER = 'outlet_manager', 'Outlet Manager'
-    CASHIER = 'cashier', 'Cashier'
-    KITCHEN = 'kitchen', 'Kitchen Staff'
     INVENTORY_MANAGER = 'inventory_manager', 'Inventory Manager'
     DELIVERY_MANAGER = 'delivery_manager', 'Delivery Manager'
-    DISTRIBUTOR      = 'distributor',       'Distributor'
+
+    # Staff Level
+    CASHIER = 'cashier', 'Cashier'
+    KITCHEN = 'kitchen', 'Kitchen Staff'
+    DISTRIBUTOR = 'distributor', 'Distributor'
 
 class UserAccountManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -36,23 +46,57 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15, blank=True, null=True)
     full_name = models.CharField(max_length=255)
+
+    # Client Association (null for super admins)
+    client = models.ForeignKey(
+        'accounts.Client',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text='Organization this user belongs to (null for super admins)'
+    )
+
+    # Role & Permissions
     role = models.CharField(
-        max_length=50, 
-        choices=UserRole.choices, 
+        max_length=50,
+        choices=UserRole.choices,
         default=UserRole.CASHIER
     )
+    custom_role = models.ForeignKey(
+        'accounts.Role',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text='Custom role with specific permissions'
+    )
+
+    # Outlet Assignment
     outlet = models.ForeignKey(
-        Outlet, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        Outlet,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="staff"
     )
+
+    # Authentication
     pin = models.CharField(max_length=255, blank=True, null=True)  # Hashed 4-digit PIN
+
+    # Status
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_email_verified = models.BooleanField(default=False)
+
+    # Activity Tracking
     last_seen = models.DateTimeField(default=timezone.now)
+    last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    login_count = models.IntegerField(default=0)
+
+    # Timestamps
     date_joined = models.DateTimeField(default=timezone.now)
+    password_changed_at = models.DateTimeField(null=True, blank=True)
 
     objects = UserAccountManager()
 
@@ -69,3 +113,41 @@ class User(AbstractBaseUser, PermissionsMixin):
     def check_pin(self, raw_pin):
         from django.contrib.auth.hashers import check_password
         return check_password(raw_pin, self.pin)
+
+    def is_superadmin(self):
+        """Check if user is a super admin"""
+        return self.role == UserRole.SUPERADMIN and self.client is None
+
+    def is_client_admin(self):
+        """Check if user is a client admin"""
+        return self.role in [UserRole.CLIENT_ADMIN, UserRole.OWNER]
+
+    def get_permissions(self):
+        """Get all permissions for this user"""
+        from apps.accounts.models_advanced import Permission
+
+        # Super admins have all permissions
+        if self.is_superadmin():
+            return Permission.objects.all()
+
+        # Get permissions from custom role
+        if self.custom_role:
+            return self.custom_role.get_all_permissions()
+
+        # Default permissions based on role (to be implemented)
+        return Permission.objects.none()
+
+    def has_permission(self, permission_name):
+        """Check if user has specific permission"""
+        if self.is_superadmin():
+            return True
+
+        user_permissions = self.get_permissions()
+        return user_permissions.filter(name=permission_name).exists()
+
+
+# Import advanced models at the end to avoid circular imports
+try:
+    from apps.accounts.models_advanced import Client, Role, Permission, APIToken, UserActivity, ClientSettings
+except ImportError:
+    pass

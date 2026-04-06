@@ -15,6 +15,16 @@ class BranchType(models.TextChoices):
 
 
 class Outlet(BaseModel):
+    # Client Association
+    client = models.ForeignKey(
+        'accounts.Client',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='outlets',
+        help_text='Organization that owns this outlet'
+    )
+
     name = models.CharField(max_length=255)
     address = models.TextField()
     city = models.CharField(max_length=100)
@@ -23,7 +33,7 @@ class Outlet(BaseModel):
     phone = models.CharField(max_length=15)
     email = models.EmailField()
     timezone = models.CharField(max_length=50, default='Asia/Kolkata')
-    operating_hours = models.TextField(default='{}') 
+    operating_hours = models.TextField(default='{}')
     outlet_code = models.SlugField(unique=True)
     
     # Receipt & Tax Settings

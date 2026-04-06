@@ -38,12 +38,17 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'outlet', 'outlet_name', 'order_number', 'order_type', 
-            'status', 'customer', 'table_number', 'token_number', 
+            'status', 'customer', 'customer_phone', 'table_number', 'token_number', 
             'subtotal', 'tax_amount', 'discount_amount', 'total_amount', 
             'notes', 'items', 'payments', 'cashier_name', 'created_at',
             'payment_mode'
         ]
         read_only_fields = ['outlet', 'order_number', 'subtotal', 'tax_amount', 'total_amount', 'token_number', 'created_at']
+        extra_kwargs = {
+            'customer_phone': {'write_only': True, 'required': False, 'allow_null': True}
+        }
+
+    customer_phone = serializers.CharField(write_only=True, required=False, allow_null=True)
 
     def create(self, validated_data):
         import json
@@ -51,8 +56,21 @@ class OrderSerializer(serializers.ModelSerializer):
         
         items_data = validated_data.pop('items')
         payment_mode = validated_data.pop('payment_mode', 'cash').lower()
+        customer_phone = validated_data.pop('customer_phone', None)
         user = self.context['request'].user
         
+        # Handle phone -> customer mapping
+        if customer_phone:
+            from apps.customers.models import Customer
+            try:
+                # Clean phone: only numbers
+                clean_phone = ''.join(filter(str.isdigit, str(customer_phone)))
+                if clean_phone:
+                    customer, _ = Customer.objects.get_or_create(phone=clean_phone)
+                    validated_data['customer'] = customer
+            except Exception as e:
+                print(f"Error mapping customer phone: {e}")
+
         # Auto-assign outlet if not provided
         if 'outlet' not in validated_data and hasattr(user, 'outlet') and user.outlet:
             validated_data['outlet'] = user.outlet

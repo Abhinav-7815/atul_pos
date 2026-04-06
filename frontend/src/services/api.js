@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api/v1';
+const API_URL = '/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -23,18 +23,108 @@ export const authApi = {
   refreshToken: (refresh) => api.post('/auth/refresh/', { refresh }),
 };
 
+// ── Persistent Menu Caching ──
+const CACHE_KEYS = {
+  CATEGORIES: 'pos_cache_categories',
+  PRODUCTS: 'pos_cache_products',
+};
+
+const getCached = (key) => {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (e) { return null; }
+};
+
+const setCached = (key, data) => {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) {}
+};
+
 export const menuApi = {
-  getCategories: () => api.get('/menu/categories/'),
-  createCategory: (data) => api.post('/menu/categories/', data),
-  updateCategory: (id, data) => api.patch(`/menu/categories/${id}/`, data),
-  deleteCategory: (id) => api.delete(`/menu/categories/${id}/`),
-  getProducts: (params) => api.get('/menu/products/', { params }),
-  createProduct: (data) => api.post('/menu/products/', data),
-  updateProduct: (id, data) => api.patch(`/menu/products/${id}/`, data),
-  deleteProduct: (id) => api.delete(`/menu/products/${id}/`),
-  createVariant: (data) => api.post('/menu/variants/', data), // Need to check if this exists
-  updateVariant: (id, data) => api.patch(`/menu/variants/${id}/`, data),
-  deleteVariant: (id) => api.delete(`/menu/variants/${id}/`),
+  getCategories: async (force = false) => {
+    const cached = getCached(CACHE_KEYS.CATEGORIES);
+    
+    // Background fetch to update cache for next time
+    const fetchFresh = async () => {
+      try {
+        const res = await api.get('/menu/categories/');
+        setCached(CACHE_KEYS.CATEGORIES, res.data);
+        return res;
+      } catch (e) { return null; }
+    };
+
+    if (!force && cached) {
+      fetchFresh(); // Silently update in background
+      return { data: cached, fromCache: true };
+    }
+    
+    const fresh = await fetchFresh();
+    return fresh || { data: [] };
+  },
+
+  getProducts: async (params, force = false) => {
+    // We cache the main list (limit 1000)
+    const isMainList = params?.limit === 1000;
+    const cached = isMainList ? getCached(CACHE_KEYS.PRODUCTS) : null;
+
+    const fetchFresh = async () => {
+      try {
+        const res = await api.get('/menu/products/', { params });
+        if (isMainList) setCached(CACHE_KEYS.PRODUCTS, res.data);
+        return res;
+      } catch (e) { return null; }
+    };
+
+    if (!force && isMainList && cached) {
+      fetchFresh(); // Silently update
+      return { data: cached, fromCache: true };
+    }
+    
+    const fresh = await fetchFresh();
+    return fresh || { data: [] };
+  },
+
+  createCategory: async (data) => {
+    const res = await api.post('/menu/categories/', data);
+    localStorage.removeItem(CACHE_KEYS.CATEGORIES);
+    return res;
+  },
+  updateCategory: async (id, data) => {
+    const res = await api.patch(`/menu/categories/${id}/`, data);
+    localStorage.removeItem(CACHE_KEYS.CATEGORIES);
+    return res;
+  },
+  deleteCategory: async (id) => {
+    const res = await api.delete(`/menu/categories/${id}/`);
+    localStorage.removeItem(CACHE_KEYS.CATEGORIES);
+    return res;
+  },
+  createProduct: async (data) => {
+    const res = await api.post('/menu/products/', data);
+    localStorage.removeItem(CACHE_KEYS.PRODUCTS);
+    return res;
+  },
+  updateProduct: async (id, data) => {
+    const res = await api.patch(`/menu/products/${id}/`, data);
+    localStorage.removeItem(CACHE_KEYS.PRODUCTS);
+    return res;
+  },
+  deleteProduct: async (id) => {
+    const res = await api.delete(`/menu/products/${id}/`);
+    localStorage.removeItem(CACHE_KEYS.PRODUCTS);
+    return res;
+  },
+  createVariant: (data) => api.post('/menu/variants/', data),
+  updateVariant: async (id, data) => {
+    const res = await api.patch(`/menu/variants/${id}/`, data);
+    localStorage.removeItem(CACHE_KEYS.PRODUCTS);
+    return res;
+  },
+  deleteVariant: async (id) => {
+    const res = await api.delete(`/menu/variants/${id}/`);
+    localStorage.removeItem(CACHE_KEYS.PRODUCTS);
+    return res;
+  },
 };
 
 export const orderApi = {
@@ -66,11 +156,18 @@ export const staffApi = {
 
 export const inventoryApi = {
   getStocks: (params) => api.get('/inventory/stocks/', { params }),
+  updateStock: (id, data) => api.patch(`/inventory/stocks/${id}/`, data),
+  setQuantity: (data) => api.post('/inventory/stocks/set_quantity/', data),
   batchAdjust: (data) => api.post('/inventory/stocks/batch_adjust/', data),
+  getTransactions: (params) => api.get('/inventory/transactions/', { params }),
   getSuppliers: (params) => api.get('/inventory/suppliers/', { params }),
   createSupplier: (data) => api.post('/inventory/suppliers/', data),
+  updateSupplier: (id, data) => api.patch(`/inventory/suppliers/${id}/`, data),
+  deleteSupplier: (id) => api.delete(`/inventory/suppliers/${id}/`),
   getPurchaseOrders: (params) => api.get('/inventory/purchase-orders/', { params }),
   createPurchaseOrder: (data) => api.post('/inventory/purchase-orders/', data),
+  updatePurchaseOrder: (id, data) => api.patch(`/inventory/purchase-orders/${id}/`, data),
+  deletePurchaseOrder: (id) => api.delete(`/inventory/purchase-orders/${id}/`),
   receivePurchaseOrder: (id) => api.post(`/inventory/purchase-orders/${id}/receive/`),
 };
 
@@ -85,6 +182,14 @@ export const outletApi = {
   getOutlet: (id) => api.get(`/outlets/${id}/`),
   createOutlet: (data) => api.post('/outlets/', data),
   updateOutlet: (id, data) => api.patch(`/outlets/${id}/`, data),
+};
+
+export const userApi = {
+  getUsers: (params) => api.get('/users/', { params }),
+  getUser: (id) => api.get(`/users/${id}/`),
+  createUser: (data) => api.post('/users/', data),
+  updateUser: (id, data) => api.patch(`/users/${id}/`, data),
+  deleteUser: (id) => api.delete(`/users/${id}/`),
 };
 
 export const distributorMgmtApi = {
@@ -109,8 +214,6 @@ export const distributorMgmtApi = {
 
   // Staff/manager for an outlet
   getOutletStaff: (outlet_id) => api.get('/users/', { params: { outlet: outlet_id } }),
-  createUser:  (data)         => api.post('/users/', data),
-  updateUser:  (id, data)     => api.patch(`/users/${id}/`, data),
 };
 
 export const distributionApi = {

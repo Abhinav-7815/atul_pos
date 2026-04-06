@@ -37,15 +37,19 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     variants = ProductVariantSerializer(many=True, required=False)
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
-    category_name = serializers.ReadOnlyField(source='category.name')
+    category_name = serializers.SerializerMethodField()
     is_available = serializers.SerializerMethodField()
-    base_price = serializers.SerializerMethodField()
+    display_price = serializers.SerializerMethodField()
+
+    def get_category_name(self, obj):
+        """Return category name or 'Uncategorized' if category is null"""
+        return obj.category.name if obj.category else 'Uncategorized'
 
     class Meta:
         model = Product
         fields = [
             'id', 'category', 'category_name', 'outlet', 'name', 'description', 
-            'base_price', 'tax_rate', 'hsn_code', 'is_veg', 'is_available', 
+            'base_price', 'display_price', 'tax_rate', 'hsn_code', 'is_veg', 'is_available', 
             'image_url', 'display_order', 'prep_time_minutes', 'allergen_tags', 
             'is_packaged_good', 'variants', 'modifier_groups'
         ]
@@ -57,7 +61,7 @@ class ProductSerializer(serializers.ModelSerializer):
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.is_available if status else obj.is_available
 
-    def get_base_price(self, obj):
+    def get_display_price(self, obj):
         outlet = self.context.get('outlet')
         if not outlet: return obj.base_price
         status = obj.outlet_statuses.filter(outlet=outlet).first()

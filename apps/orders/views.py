@@ -154,14 +154,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({"error": "Manager PIN required to void order."}, status=status.HTTP_400_BAD_REQUEST)
         
         # Find any manager/admin who can authorize this
+        from apps.accounts.models import UserRole
         authorizer = None
-        for manager in User.objects.filter(role__in=['admin', 'manager'], is_active=True):
+        # Allow superadmin, client_admin, or outlet_manager to void
+        authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER, UserRole.AREA_MANAGER]
+        for manager in User.objects.filter(role__in=authorized_roles, is_active=True):
             if manager.check_pin(manager_pin):
                 authorizer = manager
                 break
         
         if not authorizer:
-            return Response({"error": "Invalid Manager PIN."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Invalid Manager PIN or Unauthorized role."}, status=status.HTTP_401_UNAUTHORIZED)
         
         authorizer_name = authorizer.get_full_name() or authorizer.username
             

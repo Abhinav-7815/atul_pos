@@ -26,3 +26,7 @@ class ModifierGroupAdmin(admin.ModelAdmin):
 class ModifierAdmin(admin.ModelAdmin):
     list_display = ('name', 'group', 'price_delta', 'is_default')
     list_filter = ('group', 'is_default')
+
+
+# Import AI cost tracking admin
+from apps.menu.admin_ai_cost import AIImageGenerationCostAdmin, AIImageGenerationBudgetAdmin

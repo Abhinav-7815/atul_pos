@@ -19,64 +19,41 @@ import PinModal from './components/PinModal';
 import Distribution from './components/Distribution';
 import DistributorPanel from './components/DistributorPanel';
 import Distributors from './components/Distributors';
+import AIGenerator from './components/AIGenerator';
 import { cn } from './lib/utils';
 
 
 // ── Build sidebar nav items based on logged-in user's outlet type ──────────
 function getNavItems(user) {
-  const type = user?.outlet_type;
   const role = user?.role;
   const isSuperAdmin = role === 'superadmin';
 
   // Load visibility config
   const navConfig = JSON.parse(localStorage.getItem('atul_pos_nav_config') || '{}');
 
-  if (type === 'distributor') {
-    return [
-      { id: 'distributor_dashboard', label: 'My Dashboard',  icon: 'dashboard' },
-      { id: 'distributor_orders',    label: 'Place Order',   icon: 'add_shopping_cart' },
-      { id: 'distributor_myorders',  label: 'My Orders',     icon: 'receipt_long' },
-      { id: 'distributor_stock',     label: 'My Stock',      icon: 'inventory_2' },
-      { id: 'settings',              label: 'Settings',      icon: 'settings' },
-    ];
-  }
-
   const navItems = [];
 
-  // Helper to add item based on permission (respects config for everyone)
+  // Helper to add item based on permission
   const addIfEnabled = (id, label, icon, configKey) => {
-    // Default to true if key is missing, so new terminals see all features
     const isVisible = navConfig[configKey] ?? true;
     if (isVisible) {
       navItems.push({ id, label, icon });
     }
   };
 
-  // Dashboard - Super Admin Only, but toggleable
-  if (isSuperAdmin && (navConfig.dashboard_visible ?? true)) {
-    navItems.push({ id: 'dashboard', label: 'Dashboard', icon: 'dashboard' });
-  }
+  // 1. Billing POS
+  addIfEnabled('pos', 'Billing POS', 'point_of_sale', 'pos_visible');
 
-  // Operational items (now toggleable)
-  addIfEnabled('pos',   'Billing POS', 'point_of_sale', 'pos_visible');
-  // addIfEnabled('kds',   'KDS (Live)',  'countertops',   'kds_visible');
-  // addIfEnabled('shift', 'Day Close',   'account_balance_wallet', 'shift_visible');
+  // 2. Catalog
+  addIfEnabled('menu', 'Catalog', 'restaurant_menu', 'menu_visible');
 
-  // Management items (now toggleable for all who had access)
-  addIfEnabled('menu',        'Catalog',      'restaurant_menu', 'menu_visible');
-  addIfEnabled('inventory',   'Inventory',    'inventory_2',     'inventory_visible');
-  // addIfEnabled('procurement', 'Procurement',  'local_shipping',  'procurement_visible');
-  // addIfEnabled('customers',   'Customers',    'group',           'customers_visible');
+  // 3. Inventory
+  addIfEnabled('inventory', 'Inventory', 'inventory_2', 'inventory_visible');
 
-  if (type === 'main') {
-    addIfEnabled('distribution', 'Distribution', 'hub',        'distribution_visible');
-    addIfEnabled('distributors', 'Distributors', 'storefront', 'distributors_visible');
-  }
-
-  // addIfEnabled('staff',   'Staff',   'badge',     'staff_visible');
+  // 4. Reports
   addIfEnabled('reports', 'Reports', 'analytics', 'reports_visible');
 
-  // Safety: Settings always visible for Super Admin
+  // 5. Settings
   if (isSuperAdmin || (navConfig.settings_visible ?? true)) {
     navItems.push({ id: 'settings', label: 'Settings', icon: 'settings' });
   }
@@ -294,6 +271,8 @@ export default function App() {
           <Customers />
         ) : activeTab === 'settings' ? (
           <Settings user={user} onUpdateUser={(newOutlet) => setUser(prev => ({...prev, outlet_name: newOutlet.name}))} />
+        ) : activeTab === 'ai_generator' ? (
+          <AIGenerator />
         ) : activeTab === 'reports' ? (
           <Reports user={user} />
         ) : activeTab === 'kds' ? (

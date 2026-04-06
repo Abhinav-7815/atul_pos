@@ -1,8 +1,9 @@
-from rest_framework import viewsets, permissions, filters
+from rest_framework import viewsets, permissions, filters, status
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Category, Product, ProductVariant, ModifierGroup, Modifier
 from .serializers import (
-    CategorySerializer, ProductSerializer, ProductVariantSerializer, 
+    CategorySerializer, ProductSerializer, ProductVariantSerializer,
     ModifierGroupSerializer, ModifierSerializer
 )
 from apps.core.permissions import IsSuperAdmin
@@ -16,15 +17,53 @@ class IsSuperAdminOrReadOnly(permissions.BasePermission):
         )
 
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.filter(is_active=True).order_by('display_order')
-    serializer_class = CategorySerializer
     permission_classes = [IsSuperAdminOrReadOnly]
+    serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        # Prefetch products and their related data to avoid N+1 queries during serialization
+        return Category.objects.filter(is_active=True).order_by('display_order').prefetch_related(
+            'products__variants',
+            'products__modifier_groups__modifiers',
+            'products__outlet_statuses'
+        )
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         user = self.request.user
         context['outlet'] = user.outlet if user.is_authenticated and hasattr(user, 'outlet') else None
         return context
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Custom delete method for categories with safe product handling.
+        Soft deletes the category and moves products to 'Uncategorized' (null category).
+        """
+        instance = self.get_object()
+
+        # Check if category has products
+        active_products = instance.products.filter(is_active=True)
+        product_count = active_products.count()
+
+        if product_count > 0:
+            # Move products to "Uncategorized" (set category to null)
+            # This preserves the products instead of deleting them
+            for product in active_products:
+                product.category = None
+                product.save()
+
+        # Soft delete the category (uses BaseModel's soft delete)
+        instance.delete()
+
+        return Response(
+            {
+                'status': 'success',
+                'message': f'Category "{instance.name}" deleted successfully.',
+                'products_moved_to_uncategorized': product_count,
+                'note': 'Products have been moved to Uncategorized and remain active.'
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -36,28 +75,23 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if not user.is_authenticated or not hasattr(user, 'outlet'):
-             # For unauthenticated or users without outlet, show global products
-            return Product.objects.filter(outlet=None, is_active=True)
-
-        if user.role == 'superadmin' or user.is_superuser:
-            # Super admins see everything
-            return Product.objects.filter(is_active=True).prefetch_related(
-                'variants', 
-                'modifier_groups__modifiers',
-                'outlet_statuses'
-            )
-
-        outlet = user.outlet
-        from django.db.models import Q
-        return Product.objects.filter(
-            Q(outlet=None) | Q(outlet=outlet),
-            is_active=True
-        ).prefetch_related(
-            'variants', 
+        
+        # Base query with optimized fetches
+        base_qs = Product.objects.filter(is_active=True).select_related('category').prefetch_related(
+            'variants__outlet_statuses', 
             'modifier_groups__modifiers',
             'outlet_statuses'
         )
+
+        if not user.is_authenticated or not hasattr(user, 'outlet'):
+            return base_qs.filter(outlet=None)
+
+        if user.role == 'superadmin' or user.is_superuser:
+            return base_qs
+
+        outlet = user.outlet
+        from django.db.models import Q
+        return base_qs.filter(Q(outlet=None) | Q(outlet=outlet))
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

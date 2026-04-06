@@ -13,7 +13,11 @@ import {
   CheckCircle,
   AlertCircle,
   ShieldCheck,
-  Layout
+  Layout,
+  Bot,
+  Sparkles,
+  Cpu,
+  Coins
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -34,7 +38,11 @@ export default function Settings({ user, onUpdateUser }) {
     fssai_number: '',
     base_tax_rate: 5.0,
     receipt_header: '',
-    receipt_footer: ''
+    receipt_footer: '',
+    huggingface_key: '',
+    gemini_key: '',
+    ai_prompts_enabled: true,
+    ai_budget: 500
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -178,7 +186,7 @@ export default function Settings({ user, onUpdateUser }) {
                { id: 'general', label: 'Store Profile', icon: <Store size={20}/> },
                { id: 'tax', label: 'Taxes & GST', icon: <Percent size={20}/> },
                { id: 'receipt', label: 'Receipt Designer', icon: <Receipt size={20}/> },
-               user?.role === 'superadmin' && { id: 'navigation', label: 'Access Control', icon: <ShieldCheck size={20}/> },
+               // user?.role === 'superadmin' && { id: 'navigation', label: 'Access Control', icon: <ShieldCheck size={20}/> },
              ].filter(Boolean).map(t => (
                <button 
                  key={t.id}
@@ -195,7 +203,7 @@ export default function Settings({ user, onUpdateUser }) {
 
           {/* Tab Content */}
           <div className="flex-1 glass rounded-[2.5rem] p-10 overflow-y-auto custom-scrollbar">
-             <form onSubmit={handleUpdate} className={cn("space-y-8 transition-all duration-500", activeTab === 'navigation' ? "max-w-5xl" : "max-w-2xl")}>
+             <form onSubmit={handleUpdate} className="space-y-8 transition-all duration-500 max-w-2xl">
                 
                 {activeTab === 'general' && (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -358,6 +366,7 @@ export default function Settings({ user, onUpdateUser }) {
                   </motion.div>
                 )}
 
+                {/* Access Control Tab - Commented Out
                 {activeTab === 'navigation' && user?.role === 'superadmin' && (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8 pb-10">
                      <div>
@@ -375,17 +384,13 @@ export default function Settings({ user, onUpdateUser }) {
                            {[
                              { key: 'dashboard_visible', label: 'Management Dashboard', desc: 'Central analytics and sales overview.' },
                              { key: 'pos_visible', label: 'Billing POS', desc: 'The main sales and billing point.' },
-                             // { key: 'kds_visible', label: 'Kitchen Display (KDS)', desc: 'Live order tracking for kitchen staff.' },
-                             // { key: 'shift_visible', label: 'Day Close / Shift', desc: 'Financial day closing and cash handling.' },
                              { key: 'menu_visible', label: 'Menu Catalog', desc: 'Manage product categories and pricing.' },
                              { key: 'inventory_visible', label: 'Inventory Control', desc: 'Check stock levels and perform stock takes.' },
-                             // { key: 'procurement_visible', label: 'Procurement', desc: 'Create and manage purchase orders.' },
-                             // { key: 'customers_visible', label: 'Customer CRM', desc: 'View customer loyalty and purchase data.' },
-                             // { key: 'staff_visible', label: 'Staff Management', desc: 'Manage employee access and logs.' },
                              { key: 'reports_visible', label: 'Financial Reports', desc: 'Deep dive into revenue and performance.' },
                              { key: 'distributors_visible', label: 'Distributors', desc: 'Manage your distribution network supply.' },
                              { key: 'distribution_visible', label: 'Distribution Hub', desc: 'Central management for main distribution outlets.' },
                              { key: 'settings_visible', label: 'Terminal Settings', desc: 'Configure printer, receipt and terminal profile.' },
+                             { key: 'ai_visible', label: 'AI Studio', desc: 'Access to image generation and prompt tools.' },
                            ].map((item, idx) => (
                               <div 
                                  key={item.key} 
@@ -426,6 +431,7 @@ export default function Settings({ user, onUpdateUser }) {
                      </div>
                   </motion.div>
                 )}
+                End of Access Control Tab */}
 
              </form>
           </div>

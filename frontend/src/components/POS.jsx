@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, Plus, Minus, Trash2, X, Printer,
+  Search, Plus, Minus, Trash2, X, Printer, Phone,
   Loader2, ChevronRight, Check, ArrowLeft,
   ShoppingBag, Clock, User, Store, ArrowUpRight,
   Pause, Play, History, ChefHat, Weight, Droplets,
@@ -9,6 +10,7 @@ import {
   LayoutGrid, Maximize, Minimize
 } from 'lucide-react';
 import { menuApi, orderApi } from '../services/api';
+import { inventoryApi } from '../services/api';
 import { offlineService } from '../services/offline';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -47,6 +49,7 @@ const getVariationsForItem = (item) => {
       { value: 1, label: '100g', unitType: 'piece', fullName: '100 Grams' },
       { value: 0.25, label: '250g', unitType: 'weight' },
       { value: 0.50, label: '500g', unitType: 'weight' },
+      { value: 0.75, label: '750g', unitType: 'weight' },
       { value: 1.00, label: '1kg', unitType: 'weight' },
     ];
   }
@@ -79,12 +82,15 @@ export default function POS({ user }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stockMap, setStockMap] = useState({}); // product_id -> {quantity, status}
   const [searchQuery, setSearchQuery] = useState('');
   const [orderType, setOrderType] = useState('dine_in');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState('select');
   const [lastOrder, setLastOrder] = useState(null);
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [tableNo, setTableNo] = useState('');
   const [activeProduct, setActiveProduct] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
@@ -104,6 +110,13 @@ export default function POS({ user }) {
   const [managerItem, setManagerItem] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Custom Calculator States
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [calcMode, setCalcMode] = useState('qty'); // 'qty' | 'price'
+  const [calcValue, setCalcValue] = useState('0');
+  const [calcQty, setCalcQty] = useState('0');
+  const [calcPrice, setCalcPrice] = useState('0');
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -126,16 +139,13 @@ export default function POS({ user }) {
       showAdvancedManager: config.showAdvancedManager ?? true
     });
     
-    // Auto-fullscreen on first user interaction since browsers block silent fullscreen
-    const autoFullscreen = () => {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-        setIsFullscreen(true);
-      }
-      window.removeEventListener('click', autoFullscreen);
+    // Sycn isFullscreen with actual document state
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
     };
-    window.addEventListener('click', autoFullscreen);
-    return () => window.removeEventListener('click', autoFullscreen);
   }, []);
 
   useEffect(() => {
@@ -186,8 +196,28 @@ export default function POS({ user }) {
         const prodRes = await menuApi.getProducts({ category: allCats[0].id });
         setProducts(prodRes.data?.data || prodRes.data || []);
       }
+      // Fetch stock levels
+      try {
+        const stockRes = await inventoryApi.getStocks({ outlet: user?.outlet });
+        const stocks = stockRes.data?.data || stockRes.data?.results || stockRes.data || [];
+        const map = {};
+        stocks.forEach(s => { map[s.product] = { quantity: s.quantity, status: s.status }; });
+        setStockMap(map);
+      } catch (_) { /* non-critical, proceed without stock data */ }
     } catch (err) { console.error("Failed to load POS data", err); }
     finally { setLoading(false); }
+  };
+
+  const handleCustomPricing = (v) => {
+    if (!managerItem) return;
+    setCalcMode('qty');
+    // If v is a preset, use its value. If it's the "Custom" button, use current managerItem qty.
+    const initialQty = v && v.value !== 'custom' ? v.value : managerItem.qty;
+    setCalcQty(initialQty.toString());
+    const itemPrice = calculateItemPrice(managerItem);
+    setCalcPrice((itemPrice * initialQty).toFixed(2));
+    setCalcValue(initialQty.toString());
+    setShowCalculator(true);
   };
 
   const handleCategorySelect = async (id) => {
@@ -202,50 +232,45 @@ export default function POS({ user }) {
   };
 
   const handleProductClick = (product) => {
-    if ((product.variants && product.variants.length > 0) || (product.modifier_groups && product.modifier_groups.length > 0)) {
-      setActiveProduct(product);
-      setSelectedVariant(product.variants?.find(v => v.is_default) || product.variants?.[0] || null);
-      setSelectedModifiers([]);
-    } else {
-      const unitInfo = getDefaultUnit(product);
-      // Default for scoop-based is 1 (100g), for others follows unit min
-      const defaultQty = (product.category_name || '').toLowerCase().includes('scoop') ? 1 : (unitInfo.type === 'weight' ? 0.25 : 1);
-      setManagerItem({ 
-        product, 
-        variant: null, 
-        modifiers: [], 
-        qty: defaultQty, 
-        unitInfo,
-        manualPrice: null
-      });
-    }
+    const unitInfo = getDefaultUnit(product);
+    const defaultQty = (product.category_name || '').toLowerCase().includes('scoop') ? 1 : (unitInfo.type === 'weight' ? 0.25 : 1);
+    
+    setManagerItem({ 
+      product, 
+      variant: product.variants?.find(v => v.is_default) || product.variants?.[0] || null, 
+      modifiers: [], 
+      qty: defaultQty, 
+      unitInfo,
+      manualPrice: null
+    });
   };
 
 
   const addToCartFromManager = () => {
     if (!managerItem) return;
-    const { product, variant, modifiers, qty, unitInfo, manualPrice } = managerItem;
+    const { product, variant, modifiers, qty, unitInfo, manualPrice, customPrice } = managerItem;
     
     setCart(prev => {
       const variantId = variant ? variant.id : null;
-      const modifierIds = [...modifiers].sort((a,b) => a.id - b.id).map(m => m.id).join(',');
+      const modifierIds = Array.isArray(modifiers) ? modifiers.sort((a,b) => a.id - b.id).map(m => m.id).join(',') : '';
       
       const existing = prev.find(item => 
         item.product.id === product.id && 
         item.variant?.id === variantId &&
-        (item.modifiers?.map(m => m.id).sort((a,b) => a-b).join(',') === modifierIds)
+        ((item.modifiers || []).map(m => m.id).sort((a,b) => a-b).join(',') === modifierIds)
       );
 
       if (existing) {
         return prev.map(item => {
           const itemModIds = (item.modifiers || []).map(m => m.id).sort((a,b) => a-b).join(',');
           return (item.product.id === product.id && item.variant?.id === variantId && itemModIds === modifierIds) 
-            ? { ...item, qty: parseFloat((item.qty + qty).toFixed(2)), manualPrice: manualPrice || item.manualPrice } 
+            ? { ...item, qty: parseFloat((item.qty + qty).toFixed(2)), manualPrice: manualPrice || item.manualPrice, customPrice: customPrice || item.customPrice } 
             : item;
         });
       }
-      return [...prev, { product, variant, modifiers, qty, unitInfo, manualPrice }];
+      return [...prev, { product, variant, modifiers, qty, unitInfo, manualPrice, customPrice }];
     });
+    // Reset configuration state after adding to cart
     setManagerItem(null);
   };
 
@@ -254,6 +279,7 @@ export default function POS({ user }) {
       const unitInfo = v.unitType ? UNIT_OPTIONS.find(u => u.type === v.unitType) : prev.unitInfo;
       return {
         ...prev,
+        variant: null, // Mutual exclusion: deselect variant when a preset is selected
         qty: parseFloat(parseFloat(v.value).toFixed(2)),
         unitInfo
       };
@@ -270,7 +296,11 @@ export default function POS({ user }) {
   };
 
   const setManagerManualPrice = (price) => {
-    setManagerItem(prev => ({ ...prev, manualPrice: price === '' ? null : Number(price) }));
+    setManagerItem(prev => ({ 
+      ...prev, 
+      manualPrice: (price === '' || price === null) ? null : Number(price),
+      customPrice: (price !== '' && price !== null)
+    }));
   };
 
 
@@ -338,20 +368,30 @@ export default function POS({ user }) {
   };
 
   const calculateItemPrice = (item) => {
-    if (item.manualPrice !== undefined && item.manualPrice !== null) return item.manualPrice;
-    const base = Number(item.product.base_price);
-    const varPrice = item.variant ? Number(item.variant.current_price || item.variant.price_delta) : 0;
+    if (item.manualPrice !== undefined && item.manualPrice !== null && item.manualPrice !== '') return Number(item.manualPrice);
+    
+    let base = Number(item.product.display_price || item.product.base_price || 0);
+    
+    // If base price is 0, attempt to use the default variant's price as the reference
+    if (base === 0 && !item.variant) {
+      const def = (item.product.variants || []).find(v => v.is_default) || (item.product.variants || [])[0];
+      base = Number(def?.current_price || def?.price_delta || 0);
+    }
+
+    const varPrice = item.variant ? Number(item.variant.current_price || item.variant.price_delta || 0) : 0;
     const modDelta = (item.modifiers || []).reduce((sum, m) => sum + Number(m.price_delta), 0);
+    
     return base + varPrice + modDelta;
   };
 
-  const subtotal = cart.reduce((acc, item) => acc + (calculateItemPrice(item) * item.qty), 0);
+  const total = cart.reduce((acc, item) => acc + (calculateItemPrice(item) * item.qty), 0);
   const tax = cart.reduce((acc, item) => {
-    const itemPrice = calculateItemPrice(item) * item.qty;
+    const lineTotal = calculateItemPrice(item) * item.qty;
     const rate = parseFloat(item.product.tax_rate || 5.00) / 100;
-    return acc + (itemPrice * rate);
+    // Inclusive Tax: Tax = Total - (Total / (1 + Rate))
+    return acc + (lineTotal - (lineTotal / (1 + rate)));
   }, 0);
-  const total = subtotal + tax;
+  const subtotal = total - tax;
   const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
 
   const handlePlaceOrder = async () => {
@@ -361,6 +401,7 @@ export default function POS({ user }) {
       order_type: orderType,
       table_number: tableNo || null,
       notes: customerName ? `Customer: ${customerName}` : '',
+      customer_phone: customerPhone,
       payment_mode: paymentMode === 'Select' ? 'Cash' : paymentMode, // Use current state or default
       items: cart.map(item => ({
         product: item.product.id,
@@ -405,6 +446,9 @@ export default function POS({ user }) {
       setLastOrder({ ...or, receipt: rr, cartSnapshot: [...cart] });
       setStep('success');
       setCart([]);
+      setCustomerPhone('');
+      setCustomerName('');
+      setTableNo('');
     } catch (err) { 
       console.error("Failed to place order", err); 
       alert(err.response?.data?.error || "Failed to place order. Saving offline...");
@@ -707,6 +751,162 @@ export default function POS({ user }) {
     );
   };
 
+  const renderCalculatorModal = () => {
+    if (!showCalculator) return null;
+
+    const handleDigit = (digit) => {
+      setCalcValue(prev => {
+        if (digit === '.' && prev.includes('.')) return prev;
+        if (prev === '0' && digit !== '.') return digit;
+        return prev + digit;
+      });
+    };
+
+    const handleBackspace = () => {
+      setCalcValue(prev => prev.slice(0, -1) || '0');
+    };
+
+    const handleApply = () => {
+      // Final save for the current active mode's temporary value
+      const currentVal = calcValue;
+      let finalQty = calcMode === 'qty' ? currentVal : calcQty;
+      let finalPrice = calcMode === 'price' ? currentVal : calcPrice;
+
+      // Apply QTY changes
+      let q = parseFloat(finalQty);
+      if (q > 0) {
+        // Smart Conversion: If whole number >= 10, assume user meant grams.
+        // Otherwise, assume kilograms (intended for 1.2, 1.5, etc.)
+        if (q >= 10 && Number.isInteger(q)) {
+          q = q / 1000;
+        }
+        applyVariation({ value: q });
+      }
+      
+      // Apply Price changes
+      const a = parseFloat(finalPrice);
+      if (a > 0 && q > 0) {
+        // Derive the unit rate from the entered amount and quantity
+        const unitRate = (a / q).toFixed(2);
+        setManagerManualPrice(unitRate);
+      } else if (a > 0) {
+        // Fallback for q=0 (shouldn't happen)
+        setManagerManualPrice(a);
+      } else {
+        setManagerManualPrice(null);
+      }
+      
+      setShowCalculator(false);
+    };
+
+    const switchMode = (newMode) => {
+      if (newMode === calcMode) return;
+      // 1. Save current input to its mode storage
+      if (calcMode === 'qty') setCalcQty(calcValue);
+      else setCalcPrice(calcValue);
+      
+      // 2. Load and set the other mode's current state
+      setCalcMode(newMode);
+      setCalcValue(newMode === 'qty' ? calcQty : calcPrice);
+    };
+
+    return (
+      <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md">
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="bg-white rounded-[3rem] p-8 w-full max-w-[400px] shadow-2xl border border-white relative overflow-hidden"
+        >
+          {/* Decorative background atoms */}
+          <div className="absolute -top-20 -right-20 size-60 bg-atul-pink_primary/5 rounded-full blur-3xl" />
+          <div className="absolute -bottom-20 -left-20 size-40 bg-atul-pink_primary/5 rounded-full blur-2xl" />
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-2xl bg-atul-pink_primary/10 flex items-center justify-center text-atul-pink_primary">
+                  <MI name="calculate" className="text-xl" fill />
+                </div>
+                <h3 className="text-xl font-black text-atul-charcoal tracking-tight font-heading uppercase">Manual Entry</h3>
+              </div>
+              <button 
+                onClick={() => setShowCalculator(false)}
+                className="size-10 rounded-2xl bg-gray-50 flex items-center justify-center text-atul-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="flex bg-gray-50 p-1.5 rounded-2xl gap-2 mb-6 border border-gray-100 shadow-inner">
+               <button 
+                 onClick={() => switchMode('qty')}
+                 className={cn(
+                   "flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                   calcMode === 'qty' ? "bg-white text-atul-pink_primary shadow-md" : "text-atul-gray-400 hover:text-atul-charcoal"
+                 )}
+               >
+                 Quantity ({managerItem?.unitInfo?.label || 'g'})
+               </button>
+               <button 
+                 onClick={() => switchMode('price')}
+                 className={cn(
+                   "flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                   calcMode === 'price' ? "bg-white text-atul-pink_primary shadow-md" : "text-atul-gray-400 hover:text-atul-charcoal"
+                 )}
+               >
+                 Amount (₹)
+               </button>
+            </div>
+
+            {/* Display Screen */}
+            <div className="bg-atul-charcoal rounded-[2rem] p-8 mb-8 shadow-2xl relative group overflow-hidden border-4 border-white">
+               <div className="absolute top-4 right-6 flex items-center gap-1.5">
+                  <div className="size-1.5 rounded-full bg-atul-pink_primary animate-pulse" />
+                  <span className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em]">Processing</span>
+               </div>
+               <div className="flex items-baseline justify-end gap-2">
+                  <span className="text-white/30 text-2xl font-black font-mono">
+                    {calcMode === 'qty' ? 'Grams' : '₹'}
+                  </span>
+                  <span className="text-white text-6xl font-black font-mono tracking-tighter tabular-nums truncate max-w-full">
+                    {calcValue || '0'}
+                  </span>
+               </div>
+            </div>
+
+            {/* Keypad Grid */}
+            <div className="grid grid-cols-3 gap-3 mb-8">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, '.', 0].map(n => (
+                <button
+                  key={n}
+                  onClick={() => handleDigit(n.toString())}
+                  className="h-16 rounded-2xl bg-white border border-gray-100 text-xl font-black text-atul-charcoal hover:border-atul-pink_primary/30 hover:bg-atul-pink_primary/5 transition-all active:scale-95 shadow-sm"
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setCalcValue('0')}
+                className="h-16 rounded-2xl bg-atul-pink_soft/20 border-2 border-atul-pink_soft/40 text-atul-pink_primary text-[10px] font-black uppercase tracking-widest hover:bg-atul-pink_primary hover:text-white hover:border-atul-pink_primary transition-all active:scale-95 shadow-md flex items-center justify-center -mt-px"
+              >
+                Clear
+              </button>
+            </div>
+
+            <button
+              onClick={handleApply}
+              className="w-full bg-atul-pink_primary text-white py-6 rounded-[2rem] font-black text-xs tracking-[0.4em] uppercase shadow-xl shadow-atul-pink_primary/30 hover:bg-atul-pink_deep active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+            >
+              <CheckCircle2 size={18} /> Apply Changes
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
   const renderReviewModal = () => {
     if (step !== 'review') return null;
     return (
@@ -833,114 +1033,99 @@ export default function POS({ user }) {
     );
   };
 
+  const renderPhoneNumpadModal = () => {
+    if (!isPhoneModalOpen) return null;
+
+    const handleDigit = (digit) => {
+      setCustomerPhone(prev => {
+        if (prev.length >= 10) return prev;
+        return prev + digit;
+      });
+    };
+
+    const handleClear = () => {
+       setCustomerPhone('');
+    };
+
+    return (
+      <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md">
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="bg-white rounded-[3rem] p-8 w-full max-w-[400px] shadow-2xl border border-white relative overflow-hidden"
+        >
+          <div className="absolute -top-20 -right-20 size-60 bg-atul-pink_primary/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-20 -left-20 size-40 bg-atul-pink_primary/5 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-2xl bg-atul-pink_primary/10 flex items-center justify-center text-atul-pink_primary">
+                  <MI name="phone_iphone" className="text-xl" fill />
+                </div>
+                <h3 className="text-xl font-black text-atul-charcoal tracking-tight font-heading uppercase">Manual Entry</h3>
+              </div>
+              <button 
+                onClick={() => setIsPhoneModalOpen(false)}
+                className="size-10 rounded-2xl bg-gray-50 flex items-center justify-center text-atul-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="bg-atul-charcoal/95 rounded-[2.5rem] p-10 mb-8 border border-white/5 shadow-2xl relative overflow-hidden group">
+               <div className="absolute top-4 right-8 flex items-center gap-2">
+                 <div className="size-1.5 rounded-full bg-atul-pink_primary animate-pulse shadow-[0_0_8px_rgba(214,51,132,0.8)]" />
+                 <span className="text-[8px] font-black text-white/40 uppercase tracking-[0.3em]">Processing</span>
+               </div>
+               
+               <div className="relative z-10 flex flex-col items-center min-h-[60px] justify-center text-center">
+                  <span className="text-white/20 text-3xl font-black italic tracking-tighter absolute left-0 bottom-2">
+                    Mobile
+                  </span>
+                  <div className="text-4xl font-black text-white tracking-widest drop-shadow-2xl font-mono">
+                    {customerPhone || '----------'}
+                  </div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mb-8">
+               {[1,2,3,4,5,6,7,8,9,'.',0].map(n => (
+                 <button 
+                   key={n}
+                   onClick={() => handleDigit(n.toString())}
+                   className="h-16 rounded-[2.2rem] bg-white border border-gray-100/50 text-xl font-black text-atul-charcoal hover:bg-atul-cream/50 active:scale-95 transition-all shadow-sm flex items-center justify-center"
+                 >
+                   {n}
+                 </button>
+               ))}
+               <button 
+                 onClick={handleClear}
+                 className="h-16 rounded-[2.2rem] bg-red-50/30 text-red-500 font-black text-[10px] uppercase tracking-widest hover:bg-red-50 active:scale-95 transition-all flex items-center justify-center"
+               >
+                 Clear
+               </button>
+            </div>
+
+            <button 
+              onClick={() => setIsPhoneModalOpen(false)}
+              className="w-full py-6 rounded-[2.2rem] bg-atul-pink_primary text-white font-black text-xs uppercase tracking-[0.3em] shadow-xl shadow-atul-pink_primary/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+            >
+              <CheckCircle2 size={16} /> Apply Changes
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
   // ═══════════════════════════════════════════
   // STEP 1: SELECT ITEMS
   // ═══════════════════════════════════════════
   return (
     <div className="flex h-screen bg-[#F8F9FA] overflow-hidden font-sans select-none relative">
-      {/* Variant Selection Modal - Inline JSX */}
-      <AnimatePresence>
-        {activeProduct && (
-          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} 
-            onClick={()=>setActiveProduct(null)}
-            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/30 backdrop-blur-sm">
-            <motion.div initial={{scale:0.95, y:10}} animate={{scale:1, y:0}} exit={{scale:0.95, y:10}} 
-              onClick={e=>e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100">
-              <div className="px-6 pt-6 pb-4 border-b border-gray-100">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-lg font-extrabold text-atul-charcoal">{activeProduct.name}</h3>
-                    <p className="text-atul-pink_primary text-[11px] font-semibold mt-0.5">Customize your order</p>
-                  </div>
-                  <button onClick={()=>setActiveProduct(null)} className="size-8 bg-gray-100 rounded-lg flex items-center justify-center text-atul-gray hover:text-atul-charcoal hover:bg-gray-200 transition-all"><X size={16}/></button>
-                </div>
-              </div>
-              <div className="p-4 max-h-[60vh] overflow-y-auto space-y-6">
-                {/* Variants */}
-                {activeProduct.variants?.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-bold text-atul-charcoal/40 uppercase tracking-widest mb-3">Select Size/Type</p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {activeProduct.variants.map(v => (
-                        <button key={v.id} onClick={() => setSelectedVariant(v)}
-                          className={clsx(
-                            "w-full flex justify-between items-center p-3 rounded-xl border transition-all cursor-pointer",
-                            selectedVariant?.id === v.id ? "bg-atul-pink_primary/5 border-atul-pink_primary ring-1 ring-atul-pink_primary/20" : "bg-gray-50 border-gray-100"
-                          )}>
-                          <span className={clsx("font-bold text-sm", selectedVariant?.id === v.id ? "text-atul-pink_primary" : "text-atul-charcoal")}>{v.name}</span>
-                          <span className="professional-digits font-extrabold text-atul-charcoal text-sm">₹{Number(activeProduct.base_price) + Number(v.current_price || v.price_delta)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Modifiers */}
-                {activeProduct.modifier_groups?.map(group => (
-                  <div key={group.id}>
-                    <p className="text-[10px] font-bold text-atul-charcoal/40 uppercase tracking-widest mb-3">{group.name} 
-                      {group.is_required && <span className="text-atul-pink_primary ml-1">(Required)</span>}
-                    </p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {group.modifiers.map(mod => {
-                        const isSelected = selectedModifiers.find(m => m.id === mod.id);
-                        return (
-                          <button key={mod.id} 
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedModifiers(selectedModifiers.filter(m => m.id !== mod.id));
-                              } else {
-                                setSelectedModifiers([...selectedModifiers, mod]);
-                              }
-                            }}
-                            className={clsx(
-                              "w-full flex justify-between items-center p-3 rounded-xl border transition-all cursor-pointer",
-                              isSelected ? "bg-atul-pink_primary/5 border-atul-pink_primary ring-1 ring-atul-pink_primary/20" : "bg-gray-50 border-gray-100"
-                            )}>
-                            <div className="flex items-center gap-3">
-                              <div className={clsx("size-4 rounded border flex items-center justify-center transition-all", isSelected ? "bg-atul-pink_primary border-atul-pink_primary" : "border-gray-300")}>
-                                {isSelected && <Check size={10} className="text-white"/>}
-                              </div>
-                              <span className={clsx("font-bold text-sm", isSelected ? "text-atul-pink_primary" : "text-atul-charcoal")}>{mod.name}</span>
-                            </div>
-                            <span className="professional-digits font-extrabold text-atul-charcoal/60 text-xs">+₹{mod.price_delta}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="p-4 bg-gray-50 border-t border-gray-100">
-                <button 
-                  onClick={() => {
-                    const unitInfo = getDefaultUnit(activeProduct);
-                    setManagerItem({
-                      product: activeProduct,
-                      variant: selectedVariant,
-                      modifiers: selectedModifiers,
-                      qty: unitInfo.type === 'weight' ? 0.25 : 1,
-                      unitInfo,
-                      manualPrice: null
-                    });
-                    setActiveProduct(null);
-                  }}
-                  className="w-full bg-atul-pink_primary text-white font-extrabold py-4 rounded-xl shadow-lg shadow-atul-pink_primary/25 hover:bg-atul-rose_deep transition-all transform active:scale-[0.98] flex justify-between px-6">
-                  <span>Select Item</span>
-                  <span>₹{
-                    Number(activeProduct.base_price) + 
-                    (selectedVariant ? Number(selectedVariant.price_delta) : 0) + 
-                    selectedModifiers.reduce((s, m) => s + Number(m.price_delta), 0)
-                  }</span>
-                </button>
-
-
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Variant Selection Modal removed in favor of Advanced Strip */}
 
       {/* Held Orders Modal - Inline JSX */}
       <AnimatePresence>
@@ -995,6 +1180,306 @@ export default function POS({ user }) {
         )}
       </AnimatePresence>
       
+      {/* ═══ ORDER SIDEBAR — Redesigned ═══ */}
+      <aside className="w-[320px] bg-[#FDF3F6] border-r border-atul-pink_soft/40 flex flex-col z-40 relative overflow-hidden">
+
+        {/* Decorative ambient blobs */}
+        <div className="absolute -top-10 -right-10 w-36 h-36 bg-atul-pink_primary/8 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-24 -left-8 w-28 h-28 bg-atul-pink_primary/5 rounded-full blur-2xl pointer-events-none" />
+
+        {/* ── Header ── */}
+        <div className="relative px-5 pt-5 pb-4 shrink-0">
+          {/* Title row */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "size-10 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-sm",
+                cart.length > 0
+                  ? "bg-atul-pink_primary text-white shadow-atul-pink_primary/25"
+                  : "bg-white/70 text-atul-charcoal/20 border border-white"
+              )}>
+                <ShoppingBag size={17} />
+              </div>
+              <div>
+                <h2 className="text-[15px] font-black font-heading text-atul-charcoal tracking-tight leading-none">
+                  Current Order
+                </h2>
+                <p className="text-[10px] font-bold text-atul-gray/40 mt-0.5 uppercase tracking-widest">
+                  {cart.length > 0
+                    ? `${cart.length} item${cart.length !== 1 ? 's' : ''} added`
+                    : 'No items yet'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {cart.length > 0 && (
+                <button 
+                  onClick={() => {
+                    Swal.fire({
+                      title: 'Clear order?',
+                      text: "All items will be removed from your bag.",
+                      icon: 'warning',
+                      showCancelButton: true,
+                      confirmButtonColor: '#e11d48',
+                      cancelButtonColor: '#94a3b8',
+                      confirmButtonText: 'Yes, clear it',
+                      background: '#ffffff',
+                      customClass: {
+                        popup: 'rounded-2xl border border-atul-pink_soft/20',
+                        title: 'text-[18px] font-black font-heading text-atul-charcoal',
+                        htmlContainer: 'text-[12px] font-bold text-atul-gray/40',
+                        confirmButton: 'rounded-xl px-5 py-2.5 text-[12px] font-black uppercase tracking-wider',
+                        cancelButton: 'rounded-xl px-5 py-2.5 text-[12px] font-black uppercase tracking-wider'
+                      }
+                    }).then((result) => {
+                      if (result.isConfirmed) setCart([]);
+                    });
+                  }}
+                  className="size-8 rounded-xl bg-white/60 text-atul-pink_primary border border-atul-pink_soft/40 flex items-center justify-center hover:bg-atul-pink_primary hover:text-white transition-all shadow-sm active:scale-95 group"
+                  title="Clear All Items"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+
+              {/* Animated item-count badge */}
+              <AnimatePresence>
+                {cart.length > 0 && (
+                  <motion.div
+                    key="badge"
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    className="size-8 bg-atul-pink_primary text-white rounded-full flex items-center justify-center text-[12px] font-black shadow-lg shadow-atul-pink_primary/30 border-2 border-white"
+                  >
+                    {cart.length}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+
+        {/* Customer Identification - Phone No for Marketing */}
+        <div className="px-5 mb-2">
+           <div 
+              onClick={() => setIsPhoneModalOpen(true)}
+              className="bg-white/80 backdrop-blur-md rounded-2xl border border-white shadow-sm p-3 focus-within:ring-2 focus-within:ring-atul-pink_primary/20 transition-all flex items-center gap-3 cursor-pointer hover:bg-white/90"
+           >
+              <div className="size-8 rounded-xl bg-atul-pink_primary/10 text-atul-pink_primary flex items-center justify-center">
+                 <Phone size={14} />
+              </div>
+              <div className="flex-1">
+                 <p className="text-[8px] font-black text-atul-gray/40 uppercase tracking-widest leading-none mb-1">Capture Presence</p>
+                 <div className="text-[13px] font-black text-atul-charcoal h-4 flex items-center">
+                    {customerPhone || <span className="text-atul-gray/20">Enter Phone No</span>}
+                 </div>
+              </div>
+           </div>
+        </div>
+
+        {/* Thin divider */}
+        <div className="h-px bg-white/80 mx-5 shrink-0" />
+
+        {/* ── Cart Items ── */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 min-h-0">
+          {cart.length === 0 ? (
+            /* ── Empty state ── */
+            <div className="h-full flex flex-col items-center justify-center text-center px-4 gap-4">
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="size-20 bg-white/70 rounded-3xl flex items-center justify-center border border-white shadow-sm"
+              >
+                <ShoppingBag size={28} className="text-atul-pink_primary/20" />
+              </motion.div>
+              <div>
+                <p className="text-sm font-black text-atul-charcoal/20">Cart is empty</p>
+                <p className="text-[10px] text-atul-gray/30 mt-1 font-medium">Tap any product to start</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {cart.map(item => {
+                  const ui = item.unitInfo || getDefaultUnit();
+                  const itemKey = `${item.product.id}-${item.variant?.id}-${(item.modifiers || []).map(m => m.id).sort().join(',')}`;
+                  const itemTotal = calculateItemPrice(item) * item.qty;
+                  return (
+                    <motion.div
+                      layout
+                      key={itemKey}
+                      initial={{ opacity: 0, x: 24, scale: 0.96 }}
+                      animate={{ opacity: 1, x: 0,  scale: 1    }}
+                      exit={{    opacity: 0, x: -16, scale: 0.94 }}
+                      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+                      className="group relative bg-white rounded-2xl border border-white hover:border-atul-pink_primary/20 hover:shadow-md transition-all overflow-hidden shadow-sm"
+                    >
+                      {/* Left accent strip */}
+                      <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-gradient-to-b from-atul-pink_primary to-atul-pink_primary/40 rounded-r-full" />
+
+                      <div className="pl-4 pr-3 pt-3 pb-3">
+                        {/* Row 1: Name + Line Total */}
+                        <div className="flex justify-between items-start gap-2 mb-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <div className={cn("size-1.5 rounded-full shrink-0 mt-px", item.product.is_veg ? "bg-emerald-500" : "bg-red-400")} />
+                              <p className="text-[13.5px] font-bold text-atul-charcoal tracking-wide leading-relaxed" style={{ fontFamily: '"Inter", sans-serif' }}>
+                                {item.product.name.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ')}
+                              </p>
+                            </div>
+                             {(item.variant || item.modifiers?.length > 0 || (ui.type !== 'piece' || item.customPrice)) && (
+                               <div className="flex flex-wrap gap-1 mt-1.5 pl-3">
+                                 {item.variant && (
+                                   <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/8 text-atul-pink_primary rounded-md font-black uppercase tracking-wide border border-atul-pink_soft/50">
+                                     {item.variant.name}
+                                   </span>
+                                 )}
+                                 {/* Custom weight badge - Unify with variant display */}
+                                 {(ui.type !== 'piece' || item.customPrice) && !item.variant && (
+                                   <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/8 text-atul-pink_primary rounded-md font-black uppercase tracking-wide border border-atul-pink_soft/50">
+                                     {item.qty < 1 ? `${(item.qty * 1000).toFixed(0)}g` : `${item.qty}kg`}
+                                   </span>
+                                 )}
+                                 {item.modifiers?.map(m => (
+                                   <span key={m.id} className="text-[8px] px-1.5 py-0.5 bg-gray-100 text-atul-charcoal/50 rounded-md font-bold uppercase">
+                                     {m.name}
+                                   </span>
+                                 ))}
+                               </div>
+                             )}
+                          </div>
+
+                          {/* Price column */}
+                          <div className="text-right shrink-0">
+                            <p className="professional-digits text-[15px] font-black text-atul-charcoal leading-none font-mono tracking-tight">
+                              ₹{itemTotal.toFixed(0)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Row 2: Qty stepper + Delete */}
+                        <div className="flex items-center justify-between">
+                          {/* Stepper */}
+                          <div className="flex items-center gap-1.5 bg-gray-50 rounded-2xl border border-gray-100/80 p-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, -1, item.modifiers); }}
+                              className="size-10 rounded-xl flex items-center justify-center text-atul-gray-400 hover:text-atul-pink_primary hover:bg-white hover:shadow-sm transition-all active:scale-90"
+                            >
+                              <Minus size={18} strokeWidth={3} />
+                            </button>
+
+                            {(ui.type !== 'piece' || item.customPrice) ? (
+                               <span className="professional-digits text-[14px] font-black w-14 text-center text-atul-charcoal tabular-nums">
+                                 1
+                               </span>
+                            ) : (
+                               <span className="professional-digits text-[14px] font-black w-10 text-center text-atul-charcoal tabular-nums">
+                                 {item.qty}
+                               </span>
+                            )}
+
+                            {/* Unit cycle badge */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); cycleUnit(item.product.id, item.variant?.id, item.modifiers); }}
+                              title="Click to change unit"
+                              className="text-[9px] font-black text-atul-pink_primary bg-atul-pink_primary/10 px-2 py-1 rounded-xl cursor-pointer hover:bg-atul-pink_primary hover:text-white transition-all select-none"
+                            >
+                              {ui.type === 'piece' ? ui.label : (item.qty < 1 ? 'g' : 'kg')}
+                            </button>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, 1, item.modifiers); }}
+                              className="size-10 rounded-xl flex items-center justify-center text-atul-gray-400 hover:text-atul-pink_primary hover:bg-white hover:shadow-sm transition-all active:scale-90"
+                            >
+                              <Plus size={18} strokeWidth={3} />
+                            </button>
+                          </div>
+
+                          {/* Delete */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.product.id, item.variant?.id, item.modifiers); }}
+                            className="size-10 rounded-2xl flex items-center justify-center text-gray-200 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+
+              {/* Bottom spacer so last item isn't hidden under footer gradient */}
+              <div className="h-2" />
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 pt-0 bg-[#FDF3F6] shrink-0 relative z-20 space-y-4">
+          {/* Breakdown card */}
+          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white p-4 shadow-sm">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.2em]">Subtotal</span>
+              <span className="professional-digits text-[12px] font-black text-atul-charcoal/60">₹{subtotal.toFixed(0)}</span>
+            </div>
+            <div className="space-y-1.5 py-2 border-b border-atul-pink_soft/20 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.2em]">CGST (2.5%)</span>
+                <span className="professional-digits text-[11px] font-black text-atul-charcoal/60">₹{(tax/2).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.2em]">SGST (2.5%)</span>
+                <span className="professional-digits text-[11px] font-black text-atul-charcoal/60">₹{(tax/2).toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] font-black text-atul-charcoal uppercase tracking-wider">Payable Total</span>
+              <motion.span 
+                key={total}
+                initial={{ scale: 1.1, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="professional-digits text-[28px] font-black text-atul-pink_primary tracking-tight font-mono"
+              >
+                ₹{total.toFixed(0)}
+              </motion.span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            {/* 1. Hold Button */}
+            <button 
+               onClick={handleHoldOrder}
+               disabled={cart.length === 0 || isSubmitting}
+               className="h-16 flex flex-col items-center justify-center bg-white border border-atul-pink_soft/40 text-atul-charcoal/40 rounded-2xl hover:bg-atul-pink_primary/5 transition-all active:scale-95 disabled:opacity-30 group"
+            >
+               <Pause size={20} className="group-hover:text-atul-pink_primary" />
+               <span className="text-[9px] font-black mt-1 uppercase tracking-widest group-hover:text-atul-pink_primary">Hold</span>
+            </button>
+            
+            {/* 2. Cash Button */}
+            <button 
+               onClick={() => { setPaymentMode('Cash'); handlePlaceOrder(); }}
+               disabled={cart.length === 0 || isSubmitting}
+               className="h-16 flex flex-col items-center justify-center bg-[#E7F7EF] text-[#2D9B63] rounded-2xl hover:bg-[#D4F0E2] transition-all active:scale-95 shadow-sm shadow-[#2D9B63]/10 disabled:opacity-30"
+            >
+               <Banknote size={20} />
+               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">Cash</span>
+            </button>
+
+            {/* 3. QR Button */}
+            <button 
+               onClick={() => { setPaymentMode('UPI'); setShowQRModal(true); }}
+               disabled={cart.length === 0 || isSubmitting}
+               className="h-16 flex flex-col items-center justify-center bg-[#F3E8FF] text-[#7C3AED] rounded-2xl hover:bg-[#EBD5FF] transition-all active:scale-95 shadow-sm shadow-[#7C3AED]/10 disabled:opacity-30"
+            >
+               <QrCode size={20} />
+               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">QR CODE</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
       <main className={cn("flex-1 flex flex-col min-w-0 transition-all duration-700", step!=='select' && "blur-2xl scale-[0.98] opacity-50")}>
         {/* ── Header ── */}
         <header className="flex items-center justify-between px-5 py-2.5 bg-white border-b border-gray-100/80 z-30 gap-4">
@@ -1023,6 +1508,8 @@ export default function POS({ user }) {
                 placeholder="Search products, codes…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                inputMode="search"
                 className="w-full bg-[#F8F9FA] rounded-xl py-3.5 pl-11 pr-4 text-[14px] font-medium border border-gray-100 focus:border-atul-pink_primary/30 focus:bg-white focus:ring-2 focus:ring-atul-pink_primary/5 transition-all outline-none placeholder:text-atul-gray/25"
               />
               {searchQuery && (
@@ -1134,7 +1621,15 @@ export default function POS({ user }) {
         </div>
 
         {/* ── Product Grid ── */}
-        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-5 custom-scrollbar bg-[#F8F9FA]">
+        <div className={cn(
+          "overflow-y-auto px-5 pt-4 pb-5 custom-scrollbar bg-[#F8F9FA]",
+          managerItem && posConfig.showAdvancedManager ? "flex-1" : "flex-1"
+        )}
+        style={{
+          height: managerItem && posConfig.showAdvancedManager
+            ? 'calc(100% - 172px)'
+            : '100%'
+        }}>
 
           {/* Section label */}
           {!loading && filteredProducts.length > 0 && !searchQuery && (
@@ -1156,85 +1651,104 @@ export default function POS({ user }) {
               <span className="text-sm font-bold text-atul-gray">No products found</span>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-11 gap-3">
               {filteredProducts.map(p => {
                 const count = getCartItemCount(p.id);
                 const inCart = count > 0;
-
-                const getProductImage = (product) => {
-                  if (product.image_url) return product.image_url;
-                  const n = product.name.toUpperCase();
-                  if (n.includes('CHOCOLATE')) return "https://images.unsplash.com/photo-1558500204-9110ca213444?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('MANGO'))     return "https://images.unsplash.com/photo-1563805039227-9aba624c3017?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('PISTA') || n.includes('RAJBHA') || n.includes('KESAR')) return "https://images.unsplash.com/photo-1501443762994-82bd5dabb89a?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('VANILLA') || n.includes('COCONUT')) return "https://images.unsplash.com/photo-1534353436294-0dbd4bdac845?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('STRAWBERRY')) return "https://images.unsplash.com/photo-1570197788417-0e82375c9371?q=80&w=240&auto=format&fit=crop";
-                  if (n.includes('BUTTER'))    return "https://images.unsplash.com/photo-1633933358116-a27b902fad35?q=80&w=240&auto=format&fit=crop";
-                  return "https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?q=80&w=240&auto=format&fit=crop";
-                };
+                const isSelected = managerItem?.product?.id === p.id;
+                const showBadge = inCart || isSelected;
+                const stockInfo = stockMap[p.id];
+                const isOutOfStock = stockInfo?.status === 'OUT_OF_STOCK';
+                const isLowStock = stockInfo?.status === 'LOW_STOCK';
 
                 return (
                   <motion.div
                     key={p.id}
                     layout
-                    whileTap={inCart ? {} : { scale: 0.96 }}
-                    onClick={() => handleProductClick(p)}
+                    whileTap={inCart || isOutOfStock ? {} : { scale: 0.94 }}
+                    onClick={() => !isOutOfStock && handleProductClick(p)}
                     className={cn(
-                      "group flex flex-col bg-white rounded-xl overflow-hidden transition-all border select-none",
-                      inCart
-                        ? "border-atul-pink_primary/50 border-2 cursor-default shadow-lg shadow-atul-pink_primary/10 ring-4 ring-atul-pink_primary/5"
-                        : "border-gray-100 hover:border-atul-pink_primary/25 cursor-pointer hover:shadow-lg hover:-translate-y-0.5"
+                      "group relative flex flex-col h-[105px] bg-white rounded-[24px] overflow-hidden transition-all border-2 select-none px-3.5 py-4",
+                      isOutOfStock
+                        ? "border-red-100 bg-red-50/30 opacity-60 cursor-not-allowed"
+                        : inCart
+                          ? "border-atul-pink_primary bg-atul-pink_primary/5 shadow-lg shadow-atul-pink_primary/5 ring-4 ring-atul-pink_primary/5"
+                          : "border-gray-50 hover:border-atul-pink_primary/40 cursor-pointer hover:shadow-xl hover:bg-white active:bg-gray-50"
                     )}
                   >
-                    {/* Product image - Smaller aspect ratio for compact cards */}
-                    <div className="relative w-full aspect-[4/3] overflow-hidden bg-gray-50">
-                      <img
-                        src={getProductImage(p)}
-                        alt={p.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                      />
-                      {/* Tags container */}
-                      <div className="absolute top-1 left-1.5 flex flex-col gap-1">
-                        {p.is_veg && (
-                          <div className={cn("size-3 rounded-sm border-[1px] flex items-center justify-center bg-white", p.is_veg ? "border-emerald-500" : "border-red-500")}>
-                            <div className={cn("size-1.5 rounded-full", p.is_veg ? "bg-emerald-500" : "bg-red-500")} />
+                    {/* Background Pattern/Accent */}
+                    <div className="absolute top-0 right-0 p-1 opacity-[0.03] pointer-events-none group-hover:scale-125 transition-transform duration-500">
+                       <MI name="icecream" className="text-6xl" fill />
+                    </div>
+
+                    {/* Veg/Non-veg Indicator Dot */}
+                    <div className="absolute top-1.5 right-1.5 size-1.5 rounded-full z-20 border border-white shadow-sm"
+                      style={{ backgroundColor: p.is_veg ? '#10b981' : '#f43f5e' }}
+                    />
+
+                    <div className="relative z-10 flex flex-col h-full">
+                      <h3 className={cn(
+                        "text-[14px] font-bold leading-relaxed tracking-wide transition-colors line-clamp-2 mb-auto break-words",
+                        inCart ? "text-atul-pink_primary" : "text-black/85"
+                      )} style={{ fontFamily: '"Inter", sans-serif' }}>
+                        {p.name.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ')}
+                      </h3>
+
+                      <div className="flex items-center justify-between mt-auto">
+                        <span className={cn(
+                          "text-[14px] font-black font-mono tracking-tight",
+                          inCart ? "text-atul-pink_primary" : "text-atul-pink_primary/80"
+                        )}>
+                          ₹{(() => {
+                            const base = parseFloat(p.base_price || 0);
+                            if (base > 0) return base.toFixed(0);
+                            const def = (p.variants || []).find(v => v.is_default) || (p.variants || [])[0];
+                            return parseFloat(def?.current_price || def?.price_delta || 0).toFixed(0);
+                          })()}
+                        </span>
+                        
+                        {inCart && (
+                          <div className="size-4 rounded-full bg-atul-pink_primary text-white flex items-center justify-center text-[10px] font-black">
+                            {count}
                           </div>
                         )}
                       </div>
-                      
-                      {/* Badge for multiple variations */}
-                      {(p.variants?.length > 0) && (
-                         <div className="absolute top-1 right-1.5 bg-atul-charcoal/80 text-white text-[7px] px-1 py-0.5 rounded-md font-black uppercase tracking-tight backdrop-blur-sm">
-                            {p.variants.length} Sizes
-                         </div>
-                      )}
-
-                      {/* Overlays for selected items */}
-                      <AnimatePresence>
-                        {inCart && (
-                          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="absolute inset-0 bg-atul-pink_primary/10 flex flex-col items-center justify-center backdrop-blur-sm">
-                             <motion.div initial={{scale:0}} animate={{scale:1}} className="size-8 bg-atul-pink_primary text-white rounded-full flex items-center justify-center shadow-lg mb-1">
-                                <Check size={16} strokeWidth={4}/>
-                             </motion.div>
-                             <span className="text-[9px] font-black text-white bg-atul-pink_primary px-2 py-0.5 rounded-full uppercase">
-                               ×{count % 1 === 0 ? count : count.toFixed(2)}
-                             </span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                     </div>
 
-                    <div className="p-2 flex flex-col justify-between flex-1">
-                      <p className="text-[10px] font-bold text-atul-charcoal truncate tracking-tight leading-tight mb-0.5">
-                        {p.name}
-                      </p>
-                      <div className="flex items-center justify-between mt-auto">
-                        <p className="professional-digits text-[12px] font-bold text-atul-pink_primary">
-                          ₹{Number(p.base_price).toFixed(0)}
-                          <span className="text-[8px] opacity-30 ml-0.5 font-bold tracking-normal">+</span>
-                        </p>
+                    {/* Low-stock indicator dot */}
+                    {isLowStock && !isOutOfStock && (
+                      <div className="absolute top-2 left-2 z-30 flex items-center justify-center">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500 border border-white shadow-sm"></span>
+                        </span>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Out of stock overlay */}
+                    {isOutOfStock && (
+                      <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+                        <div className="text-[9px] font-black text-red-500 uppercase tracking-widest">Sold Out</div>
+                      </div>
+                    )}
+
+                    <AnimatePresence>
+                      {showBadge && (
+                        <motion.div 
+                          initial={{opacity:0}} 
+                          animate={{opacity:1}} 
+                          exit={{opacity:0}} 
+                          className="absolute inset-0 bg-atul-pink_primary/10 flex flex-col items-center justify-center backdrop-blur-sm z-20"
+                        >
+                           <motion.div initial={{scale:0}} animate={{scale:1}} className="size-7 bg-atul-pink_primary text-white rounded-full flex items-center justify-center shadow-lg mb-0.5">
+                              {isSelected && !inCart ? <MI name="weight" className="text-base text-white" fill /> : <Check size={14} strokeWidth={4}/>}
+                           </motion.div>
+                           <span className="text-[8px] font-black text-white bg-atul-pink_primary px-1.5 py-0.5 rounded-full uppercase">
+                              {inCart ? `×${count % 1 === 0 ? count : count.toFixed(2)}` : 'Configuring'}
+                           </span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 );
               })}
@@ -1244,7 +1758,7 @@ export default function POS({ user }) {
         
         {/* ── Advanced Product Manager Strip ── */}
         <AnimatePresence>
-          {managerItem && posConfig.showAdvancedManager && (
+          {posConfig.showAdvancedManager && (
             <motion.div
               initial={{ y: 80, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -1273,132 +1787,132 @@ export default function POS({ user }) {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="flex-1 flex items-center justify-between bg-[#FDF3F6]/80 backdrop-blur-xl rounded-[2.5rem] border-2 border-atul-pink_soft/40 p-5 shadow-xl relative overflow-hidden"
+                  className="w-full flex items-center justify-between bg-[#FDF3F6]/80 backdrop-blur-xl rounded-[2.5rem] border-2 border-atul-pink_soft/40 p-5 shadow-xl relative overflow-hidden"
                 >
                   <div className="absolute top-0 right-10 p-2 opacity-10 pointer-events-none">
                      <MI name="icecream" className="text-8xl" fill />
                   </div>
 
-                  <div className="flex gap-6 items-center flex-1">
+                  <div className="flex gap-10 items-center flex-1">
                     <div className="shrink-0 flex flex-col min-w-[150px]">
                       <h4 className="text-[20px] font-extrabold text-atul-charcoal leading-none tracking-tight truncate">
-                        {managerItem.product.name}
+                        {managerItem?.product?.name || '--'}
                       </h4>
                       <div className="flex items-center gap-2 mt-2">
-                        {managerItem.variant && (
+                        {managerItem?.variant && (
                           <span className="text-[10px] font-black text-atul-pink_primary uppercase tracking-widest bg-white px-2 py-0.5 rounded-lg border border-atul-pink_soft/30">
                             {managerItem.variant.name}
                           </span>
                         )}
-                        <span className="text-[10px] font-black text-atul-gray-400 font-mono">
-                          ₹{calculateItemPrice(managerItem).toFixed(0)}/{managerItem.unitInfo?.label || 'Qty'}
+                        <span className="text-[12px] font-black text-atul-pink_primary font-mono mt-1">
+                          Rate: {managerItem ? (
+                            managerItem.customPrice 
+                              ? `₹${(calculateItemPrice(managerItem) * managerItem.qty).toFixed(0)} Total`
+                              : `₹${calculateItemPrice(managerItem).toFixed(0)}/${managerItem.qty < 1 ? 'g' : (managerItem.unitInfo?.label || 'Qty')}`
+                          ) : '--'}
                         </span>
                       </div>
                     </div>
 
-                    {/* Variations Box - Grouped and Fixed */}
-                    <div className="flex gap-4 items-center h-[70px]">
-                      {/* Fixed Scoop Box */}
-                      <div className="flex bg-white p-1 rounded-2xl border border-atul-pink_soft/40 shadow-sm">
-                        {getVariationsForItem(managerItem).filter(v => v.unitType === 'piece').map(v => (
+                    <div className="flex gap-3 items-center min-w-0">
+                      {/* Combined Variations Box */}
+                      <div className="flex bg-white p-1 rounded-2xl border border-atul-pink_soft/40 shadow-sm items-center gap-1 overflow-x-auto no-scrollbar max-w-[680px] min-h-[56px]">
+                        {!managerItem ? (
+                           /* Skeletons for fallback */
+                           Array.from({ length: 6 }).map((_, i) => (
+                             <div key={i} className="min-w-[80px] h-[56px] px-4 rounded-xl border border-gray-50 flex flex-col items-center justify-center opacity-10">
+                                <div className="w-10 h-1.5 bg-atul-charcoal rounded-full mb-1" />
+                                <div className="w-6 h-1 bg-atul-charcoal rounded-full" />
+                             </div>
+                           ))
+                        ) : managerItem.product.variants?.length > 0 ? (
+                           managerItem.product.variants.map(v => (
+                             <button 
+                               key={v.id}
+                               onClick={() => setManagerItem(prev => ({ ...prev, variant: v, qty: 1 }))}
+                               className={cn(
+                                 "min-w-[80px] h-[56px] px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap",
+                                 managerItem.variant?.id === v.id
+                                   ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 z-10" 
+                                   : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
+                               )}
+                             >
+                               <span className="leading-none text-[13px]">{v.name}</span>
+                               <span className={cn("font-bold text-[11px] mt-0.5 transition-all", managerItem.variant?.id === v.id ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
+                                 ₹{(Number(managerItem.product.display_price || managerItem.product.base_price) + Number(v.current_price || v.price_delta)).toFixed(0)}
+                               </span>
+                             </button>
+                           ))
+                        ) : (
+                           getVariationsForItem(managerItem).map(v => (
+                             <button 
+                               key={`${v.label}-${v.value}`}
+                               onClick={() => {
+                                 const isCalculatorRequired = v.label.includes('750') || v.label.includes('Custom');
+                                 if (isCalculatorRequired) {
+                                   handleCustomPricing(v);
+                                 } else {
+                                   setManagerItem(prev => ({ 
+                                     ...prev, 
+                                     variant: null, 
+                                     qty: v.value, 
+                                     unitInfo: v,
+                                     customPrice: null 
+                                   }));
+                                 }
+                               }}
+                               className={cn(
+                                 "min-w-[80px] h-[56px] px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap",
+                                 managerItem.unitInfo?.label === v.label && !managerItem.customPrice
+                                   ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 z-10" 
+                                   : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
+                               )}
+                             >
+                               <span className="leading-none text-[13px]">{v.label}</span>
+                               <span className={cn("font-bold text-[11px] mt-0.5 transition-all", (managerItem.unitInfo?.label === v.label && !managerItem.customPrice) ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
+                                 ₹{calculateItemPrice({ ...managerItem, qty: v.value, unitInfo: v }).toFixed(0)}
+                               </span>
+                             </button>
+                           ))
+                        )}
+
+                        {/* Special Custom Option */}
+                        {managerItem && (
                           <button 
-                            key={`${v.label}-${v.value}`}
-                            onClick={() => {
-                               // Increment if already selected
-                               if (managerItem.unitInfo?.type === 'piece') {
-                                  applyVariation({ ...v, value: managerItem.qty + 1 });
-                               } else {
-                                  applyVariation(v);
-                               }
-                            }}
+                            onClick={() => handleCustomPricing({ label: 'Custom', value: 'custom' })}
                             className={cn(
-                               "min-w-[70px] h-[56px] px-3 rounded-xl transition-all uppercase tracking-tighter flex flex-col items-center justify-center gap-0.5",
-                               managerItem.unitInfo?.type === 'piece'
-                                 ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 scale-[1.02] z-10" 
-                                 : "text-atul-gray-400 hover:text-atul-pink_primary hover:bg-atul-pink_primary/5 font-black text-[13px]"
+                              "min-w-[100px] h-[56px] px-4 rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ml-2",
+                              managerItem.customPrice
+                                ? "bg-atul-pink_primary border-atul-pink_primary text-white shadow-lg" 
+                                : "border-atul-pink_soft/40 text-atul-pink_primary hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
                             )}
                           >
-                            <span className={cn("leading-none", managerItem.unitInfo?.type === 'piece' ? "text-[22px] font-black" : "text-[16px] font-black")}>
-                               {managerItem.unitInfo?.type === 'piece' ? managerItem.qty : '1'}
-                            </span>
-                            <span className={cn("font-bold tracking-widest", managerItem.unitInfo?.type === 'piece' ? "text-[8px] opacity-80" : "text-[8px] opacity-40")}>
-                               100gms
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Weight Variation Box */}
-                      <div className="flex bg-white p-1 rounded-2xl border border-atul-pink_soft/40 shadow-sm">
-                        {getVariationsForItem(managerItem).filter(v => v.unitType === 'weight' || (!v.unitType && managerItem.unitInfo?.type === 'weight')).map(v => (
-                          <button 
-                            key={`${v.label}-${v.value}`}
-                            onClick={() => applyVariation(v)}
-                            className={cn(
-                               "min-w-[60px] h-[56px] px-3 rounded-xl text-[13px] font-black transition-all uppercase tracking-tighter flex items-center justify-center",
-                               Math.abs(managerItem.qty - v.value) < 0.001 && managerItem.unitInfo?.type === 'weight'
-                                 ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 scale-[1.02] z-10" 
-                                 : "text-atul-gray-400 hover:text-atul-pink_primary hover:bg-atul-pink_primary/5"
+                            <span className="leading-none text-[13px] uppercase">Custom</span>
+                            {managerItem.customPrice && (
+                               <span className="text-[10px] font-bold opacity-80">
+                                 {managerItem.qty < 1 ? `${(managerItem.qty * 1000).toFixed(0)}g` : `${managerItem.qty}kg`}
+                                 {` · ₹${(calculateItemPrice(managerItem) * managerItem.qty).toFixed(0)}`}
+                               </span>
                             )}
-                          >
-                            {v.label}
                           </button>
-                        ))}
+                        )}
                       </div>
-                    </div>
-
-                    {/* Slider Type Input Box */}
-                    <div className="flex-1 flex flex-col gap-2 bg-white px-5 py-3 rounded-2xl border border-atul-pink_soft/40 shadow-sm hover:border-atul-pink_primary/30 transition-all min-w-[200px]">
-                      <div className="flex items-center justify-between">
-                         <span className="text-[10px] font-black text-atul-pink_primary uppercase tracking-widest">{managerItem.unitInfo?.label} Adjust</span>
-                         <span className="text-[18px] font-mono font-black text-atul-charcoal">{managerItem.qty}</span>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <button onClick={() => applyVariation({ value: Math.max(0, managerItem.qty - 0.25) })} className="text-atul-pink_primary p-1 hover:bg-atul-pink_primary/5 rounded-lg"><Minus size={16} strokeWidth={3} /></button>
-                        <input
-                          type="range"
-                          min={0}
-                          max={10}
-                          step={managerItem.unitInfo?.type === 'weight' ? 0.25 : 1}
-                          value={managerItem.qty}
-                          onChange={(e) => applyVariation({ value: e.target.value })}
-                          className="flex-1 h-2 bg-atul-pink_soft/30 rounded-lg appearance-none cursor-pointer accent-atul-pink_primary"
-                        />
-                        <button onClick={() => applyVariation({ value: managerItem.qty + 0.25 })} className="text-atul-pink_primary p-1 hover:bg-atul-pink_primary/5 rounded-lg"><Plus size={16} strokeWidth={3} /></button>
-                      </div>
-                    </div>
-
-                    {/* Manual Rate */}
-                    <div className="flex flex-col items-center gap-1 ml-2 group/rate">
-                       <span className="text-[8px] font-black text-atul-gray-300 uppercase tracking-widest group-hover/rate:text-atul-pink_primary transition-colors">Rate</span>
-                       <div className="relative">
-                         <input
-                           type="number"
-                           placeholder="Rate"
-                           value={managerItem.manualPrice || ''}
-                           onChange={(e) => setManagerManualPrice(e.target.value)}
-                           className={cn(
-                             "w-16 h-[56px] bg-white border border-gray-100 rounded-xl text-center font-black text-sm outline-none transition-all",
-                             managerItem.manualPrice ? "text-atul-pink_primary border-atul-pink_primary/50 bg-atul-pink_primary/5" : "text-atul-charcoal focus:border-atul-pink_primary/30"
-                           )}
-                         />
-                         {managerItem.manualPrice && (
-                            <button onClick={() => setManagerManualPrice('')} className="absolute -top-1 -right-1 size-3.5 bg-atul-pink_primary text-white rounded-full flex items-center justify-center border border-white">
-                               <X size={8}/>
-                            </button>
-                         )}
-                       </div>
                     </div>
                   </div>
-
 
                   <div className="flex items-center gap-3 ml-6">
                      <button onClick={() => setManagerItem(null)} className="size-14 bg-white border-2 border-gray-50 rounded-[1.5rem] flex items-center justify-center text-atul-gray-300 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer">
                         <X size={24}/>
                      </button>
                      <button 
-                       onClick={addToCartFromManager}
-                       className="h-14 px-10 bg-atul-pink_primary text-white rounded-[1.5rem] font-black text-sm uppercase flex items-center gap-3 shadow-[0_15px_35px_rgba(214,51,132,0.3)] hover:bg-atul-pink_deep active:scale-95 transition-all"
+                       onClick={() => managerItem && addToCartFromManager()}
+                       disabled={!managerItem}
+                       className={cn(
+                         "h-14 px-10 rounded-[1.5rem] font-black text-sm uppercase flex items-center gap-3 transition-all",
+                         managerItem
+                           ? "bg-atul-pink_primary text-white shadow-[0_15px_35px_rgba(214,51,132,0.3)] hover:bg-atul-pink_deep active:scale-95"
+                           : "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
+                       )}
                      >
                        <Plus size={20} strokeWidth={3}/> ADD TO BILL
                      </button>
@@ -1410,275 +1924,7 @@ export default function POS({ user }) {
         </AnimatePresence>
       </main>
 
-      {/* ═══ ORDER SIDEBAR — Redesigned ═══ */}
-      <aside className="w-[320px] bg-[#FDF3F6] border-l border-atul-pink_soft/40 flex flex-col z-40 relative overflow-hidden">
 
-        {/* Decorative ambient blobs */}
-        <div className="absolute -top-10 -right-10 w-36 h-36 bg-atul-pink_primary/8 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-24 -left-8 w-28 h-28 bg-atul-pink_primary/5 rounded-full blur-2xl pointer-events-none" />
-
-        {/* ── Header ── */}
-        <div className="relative px-5 pt-5 pb-4 shrink-0">
-          {/* Title row */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "size-10 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-sm",
-                cart.length > 0
-                  ? "bg-atul-pink_primary text-white shadow-atul-pink_primary/25"
-                  : "bg-white/70 text-atul-charcoal/20 border border-white"
-              )}>
-                <ShoppingBag size={17} />
-              </div>
-              <div>
-                <h2 className="text-[15px] font-black font-heading text-atul-charcoal tracking-tight leading-none">
-                  Current Order
-                </h2>
-                <p className="text-[10px] font-bold text-atul-gray/40 mt-0.5 uppercase tracking-widest">
-                  {totalItems > 0
-                    ? `${totalItems} item${totalItems !== 1 ? 's' : ''} added`
-                    : 'No items yet'}
-                </p>
-              </div>
-            </div>
-            {/* Animated item-count badge */}
-            <AnimatePresence>
-              {totalItems > 0 && (
-                <motion.div
-                  key="badge"
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  className="size-8 bg-atul-pink_primary text-white rounded-full flex items-center justify-center text-[12px] font-black shadow-lg shadow-atul-pink_primary/30 border-2 border-white"
-                >
-                  {totalItems}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Order-type toggle */}
-          <div className="flex bg-white/60 backdrop-blur-sm p-1 rounded-2xl border border-white gap-1 shadow-inner">
-            {[
-              { key: 'dine_in', label: 'Dine-In',   icon: <Store size={11}/> },
-              { key: 'takeaway', label: 'Takeaway', icon: <ShoppingBag size={11}/> },
-            ].map(({ key, label, icon }) => (
-              <button
-                key={key}
-                onClick={() => setOrderType(key)}
-                className={cn(
-                  "flex-1 py-2.5 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5",
-                  orderType === key
-                    ? "bg-atul-pink_primary text-white shadow-md shadow-atul-pink_primary/30"
-                    : "text-atul-gray/40 hover:text-atul-charcoal"
-                )}
-              >
-                {icon} {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Thin divider */}
-        <div className="h-px bg-white/80 mx-5 shrink-0" />
-
-        {/* ── Cart Items ── */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 min-h-0">
-          {cart.length === 0 ? (
-            /* ── Empty state ── */
-            <div className="h-full flex flex-col items-center justify-center text-center px-4 gap-4">
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="size-20 bg-white/70 rounded-3xl flex items-center justify-center border border-white shadow-sm"
-              >
-                <ShoppingBag size={28} className="text-atul-pink_primary/20" />
-              </motion.div>
-              <div>
-                <p className="text-sm font-black text-atul-charcoal/20">Cart is empty</p>
-                <p className="text-[10px] text-atul-gray/30 mt-1 font-medium">Tap any product to start</p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {cart.map(item => {
-                  const ui = item.unitInfo || getDefaultUnit();
-                  const itemKey = `${item.product.id}-${item.variant?.id}-${(item.modifiers || []).map(m => m.id).sort().join(',')}`;
-                  const itemTotal = calculateItemPrice(item) * item.qty;
-                  return (
-                    <motion.div
-                      layout
-                      key={itemKey}
-                      initial={{ opacity: 0, x: 24, scale: 0.96 }}
-                      animate={{ opacity: 1, x: 0,  scale: 1    }}
-                      exit={{    opacity: 0, x: -16, scale: 0.94 }}
-                      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
-                      className="group relative bg-white rounded-2xl border border-white hover:border-atul-pink_primary/20 hover:shadow-md transition-all overflow-hidden shadow-sm"
-                    >
-                      {/* Left accent strip */}
-                      <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-gradient-to-b from-atul-pink_primary to-atul-pink_primary/40 rounded-r-full" />
-
-                      <div className="pl-4 pr-3 pt-3 pb-3">
-                        {/* Row 1: Name + Line Total */}
-                        <div className="flex justify-between items-start gap-2 mb-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <div className={cn("size-1.5 rounded-full shrink-0 mt-px", item.product.is_veg ? "bg-emerald-500" : "bg-red-400")} />
-                              <p className="text-[12.5px] font-extrabold text-atul-charcoal truncate leading-tight">
-                                {item.product.name}
-                              </p>
-                            </div>
-                            {(item.variant || item.modifiers?.length > 0) && (
-                              <div className="flex flex-wrap gap-1 mt-1.5 pl-3">
-                                {item.variant && (
-                                  <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/8 text-atul-pink_primary rounded-md font-black uppercase tracking-wide border border-atul-pink_soft/50">
-                                    {item.variant.name}
-                                  </span>
-                                )}
-                                {item.modifiers?.map(m => (
-                                  <span key={m.id} className="text-[8px] px-1.5 py-0.5 bg-gray-100 text-atul-charcoal/50 rounded-md font-bold uppercase">
-                                    {m.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Price column */}
-                          <div className="text-right shrink-0">
-                            <p className="professional-digits text-[14px] font-black text-atul-charcoal leading-tight">
-                              ₹{itemTotal.toFixed(0)}
-                            </p>
-                            {item.qty > 1 && (
-                              <p className="text-[9px] text-atul-gray/30 font-bold leading-none mt-0.5">
-                                ₹{calculateItemPrice(item).toFixed(0)} ea
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Row 2: Qty stepper + Delete */}
-                        <div className="flex items-center justify-between">
-                          {/* Stepper */}
-                          <div className="flex items-center gap-1.5 bg-gray-50 rounded-2xl border border-gray-100/80 p-1">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, -1, item.modifiers); }}
-                              className="size-10 rounded-xl flex items-center justify-center text-atul-gray-400 hover:text-atul-pink_primary hover:bg-white hover:shadow-sm transition-all active:scale-90"
-                            >
-                              <Minus size={18} strokeWidth={3} />
-                            </button>
-
-                            {ui.type === 'piece' ? (
-                              <span className="professional-digits text-[14px] font-black w-10 text-center text-atul-charcoal tabular-nums">
-                                {item.qty}
-                              </span>
-                            ) : (
-                              <input
-                                type="number"
-                                step={ui.step}
-                                min={ui.min}
-                                value={item.qty}
-                                onClick={e => e.stopPropagation()}
-                                onChange={e => { e.stopPropagation(); setExactQty(item.product.id, item.variant?.id, e.target.value, item.modifiers); }}
-                                className="professional-digits text-[14px] font-black w-14 text-center outline-none bg-transparent tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                              />
-                            )}
-
-                            {/* Unit cycle badge */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); cycleUnit(item.product.id, item.variant?.id, item.modifiers); }}
-                              title="Click to change unit (Qty / Kg / L)"
-                              className="text-[9px] font-black text-atul-pink_primary bg-atul-pink_primary/10 px-2 py-1 rounded-xl cursor-pointer hover:bg-atul-pink_primary hover:text-white transition-all select-none"
-                            >
-                              {ui.label}
-                            </button>
-
-                            <button
-                              onClick={(e) => { e.stopPropagation(); updateQty(item.product.id, item.variant?.id, 1, item.modifiers); }}
-                              className="size-10 rounded-xl flex items-center justify-center text-atul-gray-400 hover:text-atul-pink_primary hover:bg-white hover:shadow-sm transition-all active:scale-90"
-                            >
-                              <Plus size={18} strokeWidth={3} />
-                            </button>
-                          </div>
-
-                          {/* Delete */}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.product.id, item.variant?.id, item.modifiers); }}
-                            className="size-10 rounded-2xl flex items-center justify-center text-gray-200 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-
-              {/* Bottom spacer so last item isn't hidden under footer gradient */}
-              <div className="h-2" />
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 pt-0 bg-[#FDF3F6] shrink-0 relative z-20 space-y-4">
-          {/* Breakdown card */}
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white p-4 shadow-sm">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.2em]">Subtotal</span>
-              <span className="professional-digits text-[12px] font-black text-atul-charcoal/60">₹{subtotal.toFixed(0)}</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-atul-pink_soft/20 mb-3">
-              <span className="text-[10px] font-black text-atul-charcoal/30 uppercase tracking-[0.2em]">GST (5%)</span>
-              <span className="professional-digits text-[12px] font-black text-atul-charcoal/60">₹{tax.toFixed(0)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[13px] font-black text-atul-charcoal uppercase tracking-wider">Payable Total</span>
-              <motion.span 
-                key={total}
-                initial={{ scale: 1.1, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="professional-digits text-[26px] font-black text-atul-pink_primary tracking-tighter"
-              >
-                ₹{total.toFixed(0)}
-              </motion.span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2.5">
-            {/* 1. Hold Button */}
-            <button 
-               onClick={handleHoldOrder}
-               disabled={cart.length === 0 || isSubmitting}
-               className="h-16 flex flex-col items-center justify-center bg-white border border-atul-pink_soft/40 text-atul-charcoal/40 rounded-2xl hover:bg-atul-pink_primary/5 transition-all active:scale-95 disabled:opacity-30 group"
-            >
-               <Pause size={20} className="group-hover:text-atul-pink_primary" />
-               <span className="text-[9px] font-black mt-1 uppercase tracking-widest group-hover:text-atul-pink_primary">Hold</span>
-            </button>
-            
-            {/* 2. Cash Button */}
-            <button 
-               onClick={() => { setPaymentMode('Cash'); handlePlaceOrder(); }}
-               disabled={cart.length === 0 || isSubmitting}
-               className="h-16 flex flex-col items-center justify-center bg-[#E7F7EF] text-[#2D9B63] rounded-2xl hover:bg-[#D4F0E2] transition-all active:scale-95 shadow-sm shadow-[#2D9B63]/10 disabled:opacity-30"
-            >
-               <Banknote size={20} />
-               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">Cash</span>
-            </button>
-
-            {/* 3. QR Button */}
-            <button 
-               onClick={() => { setPaymentMode('UPI'); setShowQRModal(true); }}
-               disabled={cart.length === 0 || isSubmitting}
-               className="h-16 flex flex-col items-center justify-center bg-[#F3E8FF] text-[#7C3AED] rounded-2xl hover:bg-[#EBD5FF] transition-all active:scale-95 shadow-sm shadow-[#7C3AED]/10 disabled:opacity-30"
-            >
-               <QrCode size={20} />
-               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">QR CODE</span>
-            </button>
-          </div>
-        </div>
-      </aside>
 
       {/* Modals Overlays */}
       <AnimatePresence>
@@ -1687,6 +1933,12 @@ export default function POS({ user }) {
       <AnimatePresence>
         {renderSuccessModal()}
       </AnimatePresence>
+      <AnimatePresence>
+        {renderCalculatorModal()}
+      </AnimatePresence>
+      <AnimatePresence>
+        {renderPhoneNumpadModal()}
+      </AnimatePresence>
     </div>
   );
-}
+};

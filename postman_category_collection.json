@@ -1,0 +1,396 @@
+{
+	"info": {
+		"_postman_id": "atul-pos-categories",
+		"name": "Atul POS - Categories API",
+		"description": "Postman collection for managing categories in Atul Ice Cream POS system",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Create Category",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text",
+						"description": "JWT token from login"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Ice Creams\",\n    \"display_order\": 1,\n    \"icon_emoji\": \"🍦\",\n    \"color_hex\": \"#D63384\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						""
+					]
+				},
+				"description": "Create a new category for menu items. Required fields: name. Optional fields: display_order, icon_emoji, color_hex."
+			},
+			"response": [
+				{
+					"name": "Success Response",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Ice Creams\",\n    \"display_order\": 1,\n    \"icon_emoji\": \"🍦\",\n    \"color_hex\": \"#D63384\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8000/api/v1/menu/categories/",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"v1",
+								"menu",
+								"categories",
+								""
+							]
+						}
+					},
+					"status": "Created",
+					"code": 201,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"status\": \"success\",\n    \"data\": {\n        \"id\": 1,\n        \"name\": \"Ice Creams\",\n        \"display_order\": 1,\n        \"icon_emoji\": \"🍦\",\n        \"color_hex\": \"#D63384\",\n        \"products\": []\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Create Category - Desserts",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Desserts\",\n    \"display_order\": 2,\n    \"icon_emoji\": \"🍰\",\n    \"color_hex\": \"#FF6B9D\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						""
+					]
+				},
+				"description": "Example: Create Desserts category"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Category - Beverages",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Beverages\",\n    \"display_order\": 3,\n    \"icon_emoji\": \"🥤\",\n    \"color_hex\": \"#20C997\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						""
+					]
+				},
+				"description": "Example: Create Beverages category"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Category - Minimum Fields",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Snacks\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						""
+					]
+				},
+				"description": "Create category with only required fields (name only). Optional fields will use defaults."
+			},
+			"response": []
+		},
+		{
+			"name": "List All Categories",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						""
+					]
+				},
+				"description": "Get list of all categories"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Category by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/:id/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						":id",
+						""
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "1",
+							"description": "Category ID"
+						}
+					]
+				},
+				"description": "Get a specific category by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Category",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"display_order\": 5,\n    \"color_hex\": \"#FF4081\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/:id/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						":id",
+						""
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "1",
+							"description": "Category ID"
+						}
+					]
+				},
+				"description": "Partially update a category (PATCH) - only send fields you want to update"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Category",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/menu/categories/:id/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"menu",
+						"categories",
+						":id",
+						""
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "1",
+							"description": "Category ID"
+						}
+					]
+				},
+				"description": "Delete a category by ID"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string",
+			"description": "JWT access token from login endpoint"
+		}
+	]
+}

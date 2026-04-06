@@ -13,9 +13,12 @@ def sync_stock_on_order_status_change(sender, instance, created, **kwargs):
             return
 
         for item in instance.items.all():
+            # Consolidated: Always deduct from the base product's stock (variant=None)
+            # This handles cases like 'Loose Ice Cream' where all portion sizes/weights 
+            # come from the same bulk stock set in the Inventory page.
             stock, _ = StockItem.objects.get_or_create(
                 product=item.product,
-                variant=item.variant,
+                variant=None, # Centralize stock at product level
                 outlet=instance.outlet,
                 defaults={'quantity': 0}
             )

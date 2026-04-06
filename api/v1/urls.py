@@ -33,6 +33,9 @@ urlpatterns = [
     path('customers/',    include('apps.customers.urls')),
     path('distribution/', include('apps.distribution.urls')),
 
+    # Advanced User Management
+    path('accounts/', include('apps.accounts.urls_advanced')),
+
     # Auth Endpoints
     path('auth/login/', LoginView.as_view(), name='auth_login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
