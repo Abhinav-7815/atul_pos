@@ -12,29 +12,56 @@ const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.inclu
 // ── QZ Tray helpers ──────────────────────────────────────────────────────────
 
 const QZ_CERT = `-----BEGIN CERTIFICATE-----
-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
+MIIDrzCCApegAwIBAgIUTG3P1A4i9+RRqAGLTpFC4jQcUQMwDQYJKoZIhvcNAQEL
+BQAwZzELMAkGA1UEBhMCSU4xEDAOBgNVBAgMB0d1amFyYXQxEjAQBgNVBAcMCUFo
+bWVkYWJhZDEXMBUGA1UECgwOQXR1bCBJY2UgQ3JlYW0xGTAXBgNVBAMMEGF0dWxp
+Y2VjcmVhbS5jb20wHhcNMjYwNDEwMjMyNDQ2WhcNMzYwNDA3MjMyNDQ2WjBnMQsw
+CQYDVQQGEwJJTjEQMA4GA1UECAwHR3VqYXJhdDESMBAGA1UEBwwJQWhtZWRhYmFk
+MRcwFQYDVQQKDA5BdHVsIEljZSBDcmVhbTEZMBcGA1UEAwwQYXR1bGljZWNyZWFt
+LmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM/WG87GE0CMXXya
+N4vlmAiYI+TdzvJqHHe5uLJfi89x7XM7Cjw5om9U/bUcUlOhT3f6/YDYg5rD4fEG
+iRZnwsgHIn2Ro7LEHhzX5ddl8h6NXizb8TDda9nrH+RYZASzqhyrKYHkVf/9OGjh
+QmmwghulJC4O25zfvkncvC+o8mLOKZnexsnFbQFYH3R3iXtJ3b9gFUw3TxKgF5HL
+pBoUqGyEMH5C58RsvUbNuV5SvtUwhTHnQoNCBF7UugoSWojZyi3EYppvPK/SyCgx
+GK31mXN3l7gdDi7inN3kQ48M82JAvkEOuyIfRpUbXPkwXBM5xx1UR8APva8zs1qy
+4tlpVqMCAwEAAaNTMFEwHQYDVR0OBBYEFCBp6gmR+AfFkYZEgO1kxUHdsGVcMB8G
+A1UdIwQYMBaAFCBp6gmR+AfFkYZEgO1kxUHdsGVcMA8GA1UdEwEB/wQFMAMBAf8w
+DQYJKoZIhvcNAQELBQADggEBAGQtPBWsOh1Jp+vXf1/EFalEbAivz0c0JEodExCP
+myuT7zoz8op4IqB/2/03HhgFGqO124WKvv9v7boqlf2QAfti0ifUTftklEYcMSxa
+J4wt6ckK/XPjhoc502m08g41Vti11JKah4R/bfn8OLWt1zk5QWp2XLrpeSyIGA14
+/IJDkQpF67rGHFRu1SCHOLfqVeyEC5bSV20k9K0OsUf2yVNougzEb9e6QLtWeaYg
+JmPZB4ftKeZ1s+359TrbE461++X+eXohvU37Tf5Tiv/FCWQLH0lHwaPVHGbZ90Ki
++PLetPMn4t+X78MAP2ZD8RmKVIKEgrW3XW+VmAWE91rrY44=
 -----END CERTIFICATE-----`;
+
+const QZ_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDP1hvOxhNAjF18
+mjeL5ZgImCPk3c7yahx3ubiyX4vPce1zOwo8OaJvVP21HFJToU93+v2A2IOaw+Hx
+BokWZ8LIByJ9kaOyxB4c1+XXZfIejV4s2/Ew3WvZ6x/kWGQEs6ocqymB5FX//Tho
+4UJpsIIbpSQuDtuc375J3LwvqPJizimZ3sbJxW0BWB90d4l7Sd2/YBVMN08SoBeR
+y6QaFKhshDB+QufEbL1GzbleUr7VMIUx50KDQgRe1LoKElqI2cotxGKabzyv0sgo
+MRit9Zlzd5e4HQ4u4pzd5EOPDPNiQL5BDrsiH0aVG1z5MFwTOccdVEfAD72vM7Na
+suLZaVajAgMBAAECggEAKHK4bbkB1S2cIhxXVBwmRwHo9mkuleIN0UUtS1Wp/YDk
+H+ltGAR1dupZB+7PnOQHdce8n19D2ZJmvgQyGNCvyUMONNbrv2ZIn/9qhU2bXdPQ
+cLWLTqHBFCOczNFhAcM/h53OEa/xBsVuvYadaLlH0P6GOIp+thybSX+yhioApja0
+YRswTzhQRCBjXsXHVUgngtP7wu78iuSYOVLoQM0qf8KnDfiJHJdKTYzN40KfNGIw
+LIokgmRoIG57s1uPTyCr5CwRzwmbAGkggIUTlBYKGcV/mbQt8ZQpQZtPe+OqQu/P
+/Iojkro87e2xvgmPwmkfqrgK+u8I3e6PkNGqb0CB7QKBgQDyNElaLCJPltqEwtqi
+KQ63eldS07bi5cS+l+IGgxobJWZ5FyleK5F0YMnErYRIgUwHnQMmdM2/lcjHH6Rx
+NgHfESMUI/0UY49sVzt7PiIvz85S1g+MbiLHS4kQmp9wj2xWhuysdYH+TpAOoeiI
++iXUKokOWZ5roBCRPse1KwfI9wKBgQDbrK9g02Av8WrMKAp4kPluFdYoceIXGF8L
+Gd0PNZ/QNQnuBkDyJ/9TMsQhU/nv/XUafBtLdttihjeH+pJOtdNfMpbE+Mfr5yQe
+jjh7D7Y5pHjcC9sTGry02ZuyTbEttX5zgHxQ30xfH5pvtwZbHz3/NxUXwtStfqzX
+wdV0xonAtQKBgQDQuZqVKP+QkzJRwxJjOPrDx5zFdkpfkx9QGNfiQM0Yo8yBgiJW
+UzmQj3CSG+6qBTMeRINYesRs3Iogf/ZY0fAe6kfOrY0GKx6IgUxzUwJnLbBi1rKj
+lK5IDaJbOsU4XYFBuBjyLnoOTGn9Ei6xDNHY26ctRLIvkct1QCMez6xv1QKBgQDH
+1MnhGcfZNRLCzvXfgXn1g5XCSv6xpbDn50opyM0tWOJEjZnM70ebhoXWD49Aml9J
+jXZC6sddU9z2LKGlSlASvHFckzdCSIyZ4yRMBhntS8nJ2lsagOsC1SWGSJiRjRWP
+umTcKJVPvu79CxCUGdKK9K+SYuCXRrGyv5gO14B+NQKBgQCPSAFbpO8WwhRs77HE
+HzJMVIJVgykKAWG0CulY2rrY2XZ+WlpZN7UkR3/i/ssUAZH+JU4TbCNEm+26A5/+
+/IKaERp3j4zigTcoZDsBO5gG7z5jv7j1WMkNsPT96g63uA56b0tBWUZNe/NBeoXF
+tzpNhygNDKCu4Q+A2aw+o3oK7Q==
+-----END PRIVATE KEY-----`;
 
 function loadQZScript() {
   return new Promise((resolve, reject) => {
@@ -52,11 +79,23 @@ async function isQZAvailable() {
     await loadQZScript();
     if (!window.qz) return false;
 
-    // Set certificate so QZ Tray trusts this site without popup
+    // Set certificate + sign requests with private key so QZ Tray trusts without popup
     window.qz.security.setCertificatePromise((resolve) => resolve(QZ_CERT));
-    // No signing key available — use empty signature (works with demo cert + override.crt)
     window.qz.security.setSignatureAlgorithm('SHA512');
-    window.qz.security.setSignaturePromise(() => (resolve) => resolve(''));
+    window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+      try {
+        const algo = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' };
+        const pemBody = QZ_PRIVATE_KEY
+          .replace('-----BEGIN PRIVATE KEY-----', '')
+          .replace('-----END PRIVATE KEY-----', '')
+          .replace(/\s/g, '');
+        const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+        crypto.subtle.importKey('pkcs8', binaryDer.buffer, algo, false, ['sign'])
+          .then(key => crypto.subtle.sign(algo, key, new TextEncoder().encode(toSign)))
+          .then(sig => resolve(btoa(String.fromCharCode(...new Uint8Array(sig)))))
+          .catch(reject);
+      } catch (err) { reject(err); }
+    });
 
     if (!window.qz.websocket.isActive()) {
       await window.qz.websocket.connect({ retries: 1, delay: 0.5 });
