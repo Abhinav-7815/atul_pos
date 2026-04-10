@@ -67,7 +67,7 @@ function loadQZScript() {
   return new Promise((resolve, reject) => {
     if (window.qz) return resolve();
     const script = document.createElement('script');
-    script.src = '/qz-tray.js';
+    script.src = '/pos/qz-tray.js';
     script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);
