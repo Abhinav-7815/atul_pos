@@ -18,7 +18,7 @@ function createWindow() {
 
   // In production, we load the bundled file from 'dist'
   // In development, we load from the Vite dev server
-  const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/billing';
+  const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/login';
   mainWindow.loadURL(startUrl);
 
   // Close dev tools in production
