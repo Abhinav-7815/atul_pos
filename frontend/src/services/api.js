@@ -52,7 +52,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         // No refresh token — redirect to login
         localStorage.removeItem('access_token');
-        window.location.href = '/login';
+        window.location.href = '/pos/login';
         return Promise.reject(error);
       }
 
@@ -68,7 +68,7 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
+        window.location.href = '/pos/login';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

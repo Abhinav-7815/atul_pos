@@ -21,6 +21,14 @@ function createWindow() {
   const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/login';
   mainWindow.loadURL(startUrl);
 
+  // Handle redirects — ensure /login always goes to /pos/login
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (url === 'http://atulicecream.com/login' || url === 'https://atulicecream.com/login') {
+      event.preventDefault();
+      mainWindow.loadURL('https://atulicecream.com/pos/login');
+    }
+  });
+
   // Close dev tools in production
   // mainWindow.webContents.openDevTools();
 
