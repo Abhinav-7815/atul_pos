@@ -11,6 +11,31 @@ const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.inclu
 
 // ── QZ Tray helpers ──────────────────────────────────────────────────────────
 
+const QZ_CERT = `-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZ15paZKMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDQwOTIzMDYzMloXDTQ2MDQwOTIzMDYzMlowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDa
+aGa4jGnEsi3XhuTCMSxLbD+N6+hp0mskkH06J749XCAGBG0Ha93t/SOFzNNP/Vp5
+S1Pa4u92MXcuZWiIHl/a8veXB0DXxvnOKpNgaqImS07xuaepLtthrEmtwgpxB3eQ
+pwzHSd+nfeyfvys2obI091kKn1UVYbNzeaxdTpgX8/+VWnDQxKngBDYjzxBt76ka
+jl+rzyFAHK84KmCEg58KCpQcwsJx8GGTK4xWxqxQao7zxEMVRjrVtLFRtjsEw5Lr
+suGNiI4DQgkGyHlb34mfye7Ywo2TIpLZOLk/xQEvQUFJoOVNAxwhmhWxNtCK3uHY
+p5X1JmWOFwdwU/2661UNAgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBTIR4RgsPx21CJhLiEcliNMEN3mpjANBgkq
+hkiG9w0BAQsFAAOCAQEAMCvlX3CzObEGqbI9ZQm9Cc7mlcqHkp8u9FUMvkv2V/YS
+5Ac1P3jNAS2WKjdyEC2yJooZY0qp4H5vTptsPoAO99XtvWY/71SHMQrC5xPO2Gas
+/ggkr+jLGPMJsHGewlvk3K+b5fjbipNdPH8W2idJwvXJRZxfGDGJzVhG6NYDD+iE
+yXvNdF1EARP2jj238mjSCmce6tiEf0kHihoX96iyQk0J/ApmWSM6BRTkNQnvOxre
+cBjdXw00olnzTZRYc2Hph2ezwMfDG8czgSDIDpqeC3Ybc/Mx7+diYV++C7wfgUx/
+n+U/5Ay1giZF8xi7hkuTCEgIWtbyH/mAw2GGPeLVpw==
+-----END CERTIFICATE-----`;
+
 function loadQZScript() {
   return new Promise((resolve, reject) => {
     if (window.qz) return resolve();
@@ -26,6 +51,13 @@ async function isQZAvailable() {
   try {
     await loadQZScript();
     if (!window.qz) return false;
+
+    // Set certificate so QZ Tray trusts this site without popup
+    window.qz.security.setCertificatePromise((resolve) => resolve(QZ_CERT));
+    // No signing key available — use empty signature (works with demo cert + override.crt)
+    window.qz.security.setSignatureAlgorithm('SHA512');
+    window.qz.security.setSignaturePromise(() => (resolve) => resolve(''));
+
     if (!window.qz.websocket.isActive()) {
       await window.qz.websocket.connect({ retries: 1, delay: 0.5 });
     }
