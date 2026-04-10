@@ -18,11 +18,8 @@ function createWindow() {
 
   // In production, we load the bundled file from 'dist'
   // In development, we load from the Vite dev server
-  if (process.env.ELECTRON_START_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_START_URL);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
-  }
+  const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/billing';
+  mainWindow.loadURL(startUrl);
 
   // Close dev tools in production
   // mainWindow.webContents.openDevTools();
@@ -34,23 +31,44 @@ function createWindow() {
 
 // Handle Silent Printing Request from React
 ipcMain.handle('print-silent', async (event, options) => {
-  if (!mainWindow) return { success: false, error: 'No window' };
+  return new Promise((resolve) => {
+    try {
+      const printWin = new BrowserWindow({ show: false });
 
-  try {
-    // This is the magic part that replaces the Python server
-    mainWindow.webContents.print({
-      silent: true,
-      printBackground: true,
-      deviceName: options.deviceName || '', // e.g. 'EPSON TM-T81'
-    }, (success, failureReason) => {
-      if (!success) {
-        console.error('Print failed:', failureReason);
-      }
-    });
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+      const htmlContent = options.html || '<p>No content</p>';
+      const fullHtml = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <style>
+      @page { margin: 0; size: 80mm auto; }
+      body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+    </style>
+  </head>
+  <body>${htmlContent}</body>
+</html>`;
+
+      printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(fullHtml));
+
+      printWin.webContents.once('did-finish-load', () => {
+        printWin.webContents.print({
+          silent: true,
+          printBackground: true,
+          deviceName: options.deviceName || '',
+        }, (success, failureReason) => {
+          printWin.close();
+          if (success) {
+            resolve({ success: true });
+          } else {
+            console.error('Print failed:', failureReason);
+            resolve({ success: false, error: failureReason });
+          }
+        });
+      });
+    } catch (err) {
+      resolve({ success: false, error: err.message });
+    }
+  });
 });
 
 app.on('ready', createWindow);

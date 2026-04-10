@@ -64,17 +64,16 @@ function getRefHtml(ref) {
 }
 
 export async function printReceipt({ receiptRef }) {
+  const html = getRefHtml(receiptRef);
   if (isElectron) {
-    console.log('[Printer] Detected Electron! Using native silent print for Bill...');
+    console.log('[Printer] Electron: silent print for Bill...');
     try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', type: 'bill' });
+      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', html: html || '' });
     } catch (err) {
       console.error('[Printer] Electron native print failed:', err);
-      window.print();
     }
   } else {
-    console.log('[Printer] Using hidden iframe print for Bill...');
-    const html = getRefHtml(receiptRef);
+    console.log('[Printer] Browser: hidden iframe print for Bill...');
     if (html) {
       await printViaIframe(html);
     } else {
@@ -85,17 +84,16 @@ export async function printReceipt({ receiptRef }) {
 }
 
 export async function printKOT({ kotRef }) {
+  const html = getRefHtml(kotRef);
   if (isElectron) {
-    console.log('[Printer] Detected Electron! Using native silent print for KOT...');
+    console.log('[Printer] Electron: silent print for KOT...');
     try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', type: 'kot' });
+      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', html: html || '' });
     } catch (err) {
       console.error('[Printer] Electron native print failed:', err);
-      window.print();
     }
   } else {
-    console.log('[Printer] Using hidden iframe print for KOT...');
-    const html = getRefHtml(kotRef);
+    console.log('[Printer] Browser: hidden iframe print for KOT...');
     if (html) {
       await printViaIframe(html);
     } else {
