@@ -82,19 +82,21 @@ async function isQZAvailable() {
     // Set certificate + sign requests with private key so QZ Tray trusts without popup
     window.qz.security.setCertificatePromise((resolve) => resolve(QZ_CERT));
     window.qz.security.setSignatureAlgorithm('SHA512');
-    window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
-      try {
-        const algo = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' };
-        const pemBody = QZ_PRIVATE_KEY
-          .replace('-----BEGIN PRIVATE KEY-----', '')
-          .replace('-----END PRIVATE KEY-----', '')
-          .replace(/\s/g, '');
-        const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
-        crypto.subtle.importKey('pkcs8', binaryDer.buffer, algo, false, ['sign'])
-          .then(key => crypto.subtle.sign(algo, key, new TextEncoder().encode(toSign)))
-          .then(sig => resolve(btoa(String.fromCharCode(...new Uint8Array(sig)))))
-          .catch(reject);
-      } catch (err) { reject(err); }
+    window.qz.security.setSignaturePromise((toSign) => {
+      return new Promise((resolve, reject) => {
+        try {
+          const algo = { name: 'RSASSA-PKCS1-v1_5', hash: { name: 'SHA-512' } };
+          const pemBody = QZ_PRIVATE_KEY
+            .replace('-----BEGIN PRIVATE KEY-----', '')
+            .replace('-----END PRIVATE KEY-----', '')
+            .replace(/\s+/g, '');
+          const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+          crypto.subtle.importKey('pkcs8', binaryDer.buffer, algo, false, ['sign'])
+            .then(key => crypto.subtle.sign(algo, key, new TextEncoder().encode(toSign)))
+            .then(sig => resolve(btoa(String.fromCharCode(...new Uint8Array(sig)))))
+            .catch(reject);
+        } catch (err) { reject(err); }
+      });
     });
 
     if (!window.qz.websocket.isActive()) {
@@ -107,7 +109,7 @@ async function isQZAvailable() {
 }
 
 async function printViaQZ(htmlContent) {
-  const config = window.qz.configs.create(null); // null = default printer
+  const config = window.qz.configs.create('EPSON TM-T82 Receipt');
   const data = [{
     type: 'pixel',
     format: 'html',
