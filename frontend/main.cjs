@@ -62,7 +62,7 @@ ipcMain.handle('print-silent', async (event, options) => {
         printWin.webContents.print({
           silent: true,
           printBackground: true,
-          deviceName: options.deviceName || '',
+          deviceName: options.deviceName || 'EPSON TM-T82 Receipt',
         }, (success, failureReason) => {
           printWin.close();
           if (success) {

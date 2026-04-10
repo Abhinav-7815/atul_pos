@@ -68,7 +68,7 @@ export async function printReceipt({ receiptRef }) {
   if (isElectron) {
     console.log('[Printer] Electron: silent print for Bill...');
     try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', html: html || '' });
+      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T82 Receipt', html: html || '' });
     } catch (err) {
       console.error('[Printer] Electron native print failed:', err);
     }
@@ -88,7 +88,7 @@ export async function printKOT({ kotRef }) {
   if (isElectron) {
     console.log('[Printer] Electron: silent print for KOT...');
     try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T81', html: html || '' });
+      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T82 Receipt', html: html || '' });
     } catch (err) {
       console.error('[Printer] Electron native print failed:', err);
     }
