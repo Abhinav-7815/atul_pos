@@ -6,7 +6,8 @@
  * - In Browser: Prints via hidden iframe (only the receipt/KOT, not the full page).
  */
 
-const isElectron = typeof window !== 'undefined' && window.electronAPI && window.electronAPI.isElectron;
+// navigator.userAgent contains "Electron" in all Electron windows, including remote URLs
+const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
 
 /**
  * Prints the innerHTML of a given DOM ref via a hidden iframe.
@@ -63,21 +64,25 @@ function getRefHtml(ref) {
   return html;
 }
 
+async function silentPrintViaLocalServer(html) {
+  // Electron local print server runs on 127.0.0.1:9191
+  await fetch('http://127.0.0.1:9191/print', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, deviceName: 'EPSON TM-T82 Receipt' }),
+  });
+}
+
 export async function printReceipt({ receiptRef }) {
   const html = getRefHtml(receiptRef);
   if (isElectron) {
-    console.log('[Printer] Electron: silent print for Bill...');
-    try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T82 Receipt', html: html || '' });
-    } catch (err) {
-      console.error('[Printer] Electron native print failed:', err);
-    }
+    console.log('[Printer] Electron: silent print via local server...');
+    await silentPrintViaLocalServer(html || '');
   } else {
     console.log('[Printer] Browser: hidden iframe print for Bill...');
     if (html) {
       await printViaIframe(html);
     } else {
-      console.warn('[Printer] receiptRef not provided, falling back to window.print()');
       window.print();
     }
   }
@@ -86,18 +91,13 @@ export async function printReceipt({ receiptRef }) {
 export async function printKOT({ kotRef }) {
   const html = getRefHtml(kotRef);
   if (isElectron) {
-    console.log('[Printer] Electron: silent print for KOT...');
-    try {
-      await window.electronAPI.printSilent({ deviceName: 'EPSON TM-T82 Receipt', html: html || '' });
-    } catch (err) {
-      console.error('[Printer] Electron native print failed:', err);
-    }
+    console.log('[Printer] Electron: silent print via local server...');
+    await silentPrintViaLocalServer(html || '');
   } else {
     console.log('[Printer] Browser: hidden iframe print for KOT...');
     if (html) {
       await printViaIframe(html);
     } else {
-      console.warn('[Printer] kotRef not provided, falling back to window.print()');
       window.print();
     }
   }

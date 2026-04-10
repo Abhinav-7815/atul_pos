@@ -1,50 +1,55 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const http = require('http');
 
 let mainWindow;
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    fullscreen: false, // Set to true for production kiosk mode
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-    icon: path.join(__dirname, 'public/vite.svg') // Placeholder icon
-  });
+// Local print server on port 9191 — React fetches this instead of IPC
+function startPrintServer() {
+  const server = http.createServer((req, res) => {
+    // Allow CORS from atulicecream.com
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // In production, we load the bundled file from 'dist'
-  // In development, we load from the Vite dev server
-  const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/login';
-  mainWindow.loadURL(startUrl);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
-  // Handle redirects — ensure /login always goes to /pos/login
-  mainWindow.webContents.on('will-redirect', (event, url) => {
-    if (url === 'http://atulicecream.com/login' || url === 'https://atulicecream.com/login') {
-      event.preventDefault();
-      mainWindow.loadURL('https://atulicecream.com/pos/login');
+    if (req.method === 'POST' && req.url === '/print') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { html, deviceName } = JSON.parse(body);
+          silentPrint(html, deviceName);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+    } else {
+      res.writeHead(404);
+      res.end();
     }
   });
 
-  // Close dev tools in production
-  // mainWindow.webContents.openDevTools();
-
-  mainWindow.on('closed', function () {
-    mainWindow = null;
+  server.listen(9191, '127.0.0.1', () => {
+    console.log('[PrintServer] Listening on http://127.0.0.1:9191');
   });
 }
 
-// Handle Silent Printing Request from React
-ipcMain.handle('print-silent', async (event, options) => {
-  return new Promise((resolve) => {
-    try {
-      const printWin = new BrowserWindow({ show: false });
+function silentPrint(htmlContent, deviceName) {
+  const printWin = new BrowserWindow({
+    show: false,
+    webPreferences: { nodeIntegration: false }
+  });
 
-      const htmlContent = options.html || '<p>No content</p>';
-      const fullHtml = `<!DOCTYPE html>
+  const fullHtml = `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8"/>
@@ -53,33 +58,54 @@ ipcMain.handle('print-silent', async (event, options) => {
       body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     </style>
   </head>
-  <body>${htmlContent}</body>
+  <body>${htmlContent || '<p>No content</p>'}</body>
 </html>`;
 
-      printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(fullHtml));
+  printWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(fullHtml));
 
-      printWin.webContents.once('did-finish-load', () => {
-        printWin.webContents.print({
-          silent: true,
-          printBackground: true,
-          deviceName: options.deviceName || 'EPSON TM-T82 Receipt',
-        }, (success, failureReason) => {
-          printWin.close();
-          if (success) {
-            resolve({ success: true });
-          } else {
-            console.error('Print failed:', failureReason);
-            resolve({ success: false, error: failureReason });
-          }
-        });
-      });
-    } catch (err) {
-      resolve({ success: false, error: err.message });
+  printWin.webContents.once('did-finish-load', () => {
+    printWin.webContents.print({
+      silent: true,
+      printBackground: true,
+      deviceName: deviceName || '',
+    }, (success, failureReason) => {
+      printWin.close();
+      if (!success) console.error('[PrintServer] Print failed:', failureReason);
+    });
+  });
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    fullscreen: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    icon: path.join(__dirname, 'public/vite.svg')
+  });
+
+  const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/login';
+  mainWindow.loadURL(startUrl);
+
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (url === 'http://atulicecream.com/login' || url === 'https://atulicecream.com/login') {
+      event.preventDefault();
+      mainWindow.loadURL('https://atulicecream.com/pos/login');
     }
   });
-});
 
-app.on('ready', createWindow);
+  mainWindow.on('closed', function () {
+    mainWindow = null;
+  });
+}
+
+app.on('ready', () => {
+  startPrintServer();
+  createWindow();
+});
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
