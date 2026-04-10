@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -33,7 +34,6 @@ function getNavItems(user) {
 
   const navItems = [];
 
-  // Helper to add item based on permission
   const addIfEnabled = (id, label, icon, configKey) => {
     const isVisible = navConfig[configKey] ?? true;
     if (isVisible) {
@@ -41,19 +41,11 @@ function getNavItems(user) {
     }
   };
 
-  // 1. Billing POS
-  addIfEnabled('pos', 'Billing POS', 'point_of_sale', 'pos_visible');
-
-  // 2. Catalog
+  addIfEnabled('billing', 'Billing POS', 'point_of_sale', 'pos_visible');
   addIfEnabled('menu', 'Catalog', 'restaurant_menu', 'menu_visible');
-
-  // 3. Inventory
   addIfEnabled('inventory', 'Inventory', 'inventory_2', 'inventory_visible');
-
-  // 4. Reports
   addIfEnabled('reports', 'Reports', 'analytics', 'reports_visible');
 
-  // 5. Settings
   if (isSuperAdmin || (navConfig.settings_visible ?? true)) {
     navItems.push({ id: 'settings', label: 'Settings', icon: 'settings' });
   }
@@ -67,23 +59,21 @@ const MaterialIcon = ({ name, className = "", fill = false }) => (
   </span>
 );
 
-export default function App() {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'pos');
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [cart, setCart] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [checkoutSuccess, setCheckoutSuccess] = useState(null);
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+function AppContent({ user, setUser, handleLogin, handleLogout }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [navUpdates, setNavUpdates] = useState(0);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
 
+  // Sync active tab from URL path
+  const activeTab = useMemo(() => {
+    const path = location.pathname.substring(1);
+    return path || 'billing';
+  }, [location.pathname]);
+
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
@@ -96,60 +86,12 @@ export default function App() {
 
   const navItems = useMemo(() => getNavItems(user), [user, navUpdates]);
 
-  const canAccessTab = useMemo(() => {
-    return navItems.some(item => item.id === activeTab);
-  }, [navItems, activeTab]);
-
+  // Exit fullscreen when navigating away from billing
   useEffect(() => {
-    if (!canAccessTab && user?.role !== 'superadmin') {
-      setActiveTab('pos');
-      localStorage.setItem('activeTab', 'pos');
+    if (activeTab !== 'billing' && isFullscreen) {
+      document.exitFullscreen().catch(() => {});
     }
-  }, [canAccessTab, activeTab, user]);
-
-  useEffect(() => {
-    if (user) {
-      loadMenu();
-    }
-  }, [user]);
-
-  const handleLogin = (userData) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-  };
-
-  const loadMenu = async () => {
-    try {
-      const catRes = await menuApi.getCategories();
-      const allCats = catRes.data?.data || catRes.data || [];
-      setCategories(allCats);
-      if (allCats.length > 0) {
-        setSelectedCategory(allCats[0].id);
-        loadProducts(allCats[0].id);
-      }
-    } catch (err) {
-      console.error("Failed to load categories", err);
-    }
-  };
-
-  const loadProducts = async (catId) => {
-    try {
-      setLoading(true);
-      const prodRes = await menuApi.getProducts({ category: catId });
-      setProducts(prodRes.data?.data || prodRes.data || []);
-    } catch (err) {
-      console.error("Failed to load products", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-  };
+  }, [activeTab]);
 
   const handlePinSwitch = async (pin) => {
     try {
@@ -157,7 +99,6 @@ export default function App() {
       const loginData = res.data?.data || res.data;
       if (loginData && loginData.access) {
         localStorage.setItem('access_token', loginData.access);
-        localStorage.setItem('refresh_token', loginData.refresh);
         handleLogin(loginData.user);
         setIsPinModalOpen(false);
         return true;
@@ -169,133 +110,111 @@ export default function App() {
   };
 
   if (!user) {
+    if (location.pathname !== '/login') {
+       return <Navigate to="/login" replace />;
+    }
     return <Login onLoginSuccess={handleLogin} />;
+  }
+
+  if (location.pathname === '/login') {
+     return <Navigate to="/billing" replace />;
   }
 
   return (
     <div className="flex h-screen bg-[#FDF3F6] font-sans overflow-hidden">
-      {/* Global Grain Overlay */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-50 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuAVBbRsaGYdCe_s-o8jqR9nJa_mthPmgAh0wURjtR78rPPofw-FjgEVlP1a1SZjvP5_caDNAiFJJn4T_HK9JUWMEfkCyowgFI_MqspIP1CiFvv4IkiRmENXYRPX2MJCCSMAUcVWDzEqcD_U9h0oktywI8neBaej-LZcAsDIlyxN_NCMyHtrhQTsnCyKKIQukpRURHFV5IO__JP1DVelhVWW2Q3SMKqacV1bSoLJ9a2d_4I_5RC5cvOn6mS-xtg64rCTeLnGVsCMyzI')]"></div>
 
-      {/* Sidebar - Hides on POS fullscreen */}
-      {(!isFullscreen || activeTab !== 'pos') && (
+      {!(activeTab === 'billing' && isFullscreen) && (
         <aside className="w-[220px] fixed h-screen border-r border-white/50 flex flex-col z-20 bg-transparent">
-        {/* Logo Section */}
-        <div className="p-6 flex items-center gap-2">
-          <div className="size-9 bg-atul-pink_primary rounded-full shadow-sm flex items-center justify-center text-white">
-            <MaterialIcon name="icecream" fill className="text-[18px]" />
+          <div className="p-6 flex items-center gap-2">
+            <div className="size-9 bg-atul-pink_primary rounded-full shadow-sm flex items-center justify-center text-white">
+              <MaterialIcon name="icecream" fill className="text-[18px]" />
+            </div>
+            <div className="flex flex-col">
+              <h1 className="font-serif text-[16px] tracking-tight font-bold leading-none text-atul-pink_primary">Atul Ice Cream</h1>
+              <span className="text-[8px] uppercase tracking-[0.2em] font-bold text-atul-pink_primary/60 mt-0.5">Luxury POS</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <h1 className="font-serif text-[16px] tracking-tight font-bold leading-none text-atul-pink_primary">Atul Ice Cream</h1>
-            <span className="text-[8px] uppercase tracking-[0.2em] font-bold text-atul-pink_primary/60 mt-0.5">Luxury POS</span>
-          </div>
-        </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 mt-4 space-y-1.5 pr-5">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveTab(item.id);
-                localStorage.setItem('activeTab', item.id);
-              }}
-              className={cn(
-                "w-full flex items-center gap-3 transition-all pl-6 pr-5",
-                activeTab === item.id 
-                  ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 py-3 rounded-r-full" 
-                  : "py-2.5 text-atul-charcoal/60 hover:bg-atul-pink_primary/5 hover:text-atul-pink_primary rounded-r-full"
-              )}
-            >
-              <MaterialIcon 
-                name={item.icon} 
-                className="text-[20px]" 
-                fill={activeTab === item.id} 
-              />
-              <span className={cn(
-                  "text-[13px] font-sans tracking-wide", 
-                  activeTab === item.id ? "font-bold" : "font-semibold"
-                )}>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+          <nav className="flex-1 mt-4 space-y-1.5 pr-5">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  navigate(`/${item.id}`);
+                  // Automatically try to enter fullscreen when switching to POS
+                  if (item.id === 'billing') {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                  }
+                }}
+                className={cn(
+                  "w-full flex items-center gap-3 transition-all pl-6 pr-5",
+                  activeTab === item.id 
+                    ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 py-3 rounded-r-full" 
+                    : "py-2.5 text-atul-charcoal/60 hover:bg-atul-pink_primary/5 hover:text-atul-pink_primary rounded-r-full"
+                )}
+              >
+                <MaterialIcon name={item.icon} className="text-[20px]" fill={activeTab === item.id} />
+                <span className={cn("text-[13px] font-sans tracking-wide", activeTab === item.id ? "font-bold" : "font-semibold")}>
+                  {item.label}
+                </span>
+              </button>
+            ))}
+          </nav>
 
-        {/* Profile Section */}
-        <div className="pb-6 px-4 space-y-2">
-          <div className="flex items-center gap-2.5 p-1.5 bg-[#F8E2EB]/50 backdrop-blur-sm border border-white/40 rounded-[2rem] shadow-sm transition-colors">
-            <img 
-               src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'Atul Admin')}&background=D63384&color=fff&bold=true`} 
-               className="size-9 rounded-full object-cover border-2 border-white shadow-sm" 
-               alt="User" 
-             />
-             <div className="flex flex-col min-w-0 pr-2">
-                <span className="text-[12px] font-bold text-atul-charcoal tracking-tight truncate">{user.full_name || 'System Admin'}</span>
-                <span className="text-[9px] uppercase font-bold text-atul-pink_primary/60 tracking-wider truncate">{user.outlet_name || 'Main Outlet'}</span>
-             </div>
+          <div className="pb-6 px-4 space-y-2">
+            <div className="flex items-center gap-2.5 p-1.5 bg-[#F8E2EB]/50 backdrop-blur-sm border border-white/40 rounded-[2rem] shadow-sm">
+              <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'Atul Admin')}&background=D63384&color=fff&bold=true`} className="size-9 rounded-full object-cover border-2 border-white shadow-sm" alt="User" />
+               <div className="flex flex-col min-w-0 pr-2">
+                  <span className="text-[12px] font-bold text-atul-charcoal tracking-tight truncate">{user.full_name || 'System Admin'}</span>
+                  <span className="text-[9px] uppercase font-bold text-atul-pink_primary/60 tracking-wider truncate">{user.outlet_name || 'Main Outlet'}</span>
+               </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleLogout} className="flex-1 bg-red-50 hover:bg-red-100 text-red-500 py-2.5 rounded-xl border border-red-100 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                <MaterialIcon name="logout" className="text-[16px]" />
+                <span>Log Out</span>
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setIsPinModalOpen(true)}
-              className="flex-1 bg-white hover:bg-atul-pink_soft/20 text-atul-pink_primary py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider border border-white/50 shadow-sm transition-all flex items-center justify-center gap-1.5 px-3">
-              <MaterialIcon name="sync_alt" className="text-[14px]" />
-              <span>Switch</span>
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="px-3 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl border border-red-100 transition-all flex items-center justify-center">
-              <MaterialIcon name="logout" className="text-[16px]" />
-            </button>
-          </div>
-        </div>
-      </aside>
+        </aside>
       )}
 
-      <PinModal 
-        isOpen={isPinModalOpen} 
-        onClose={() => setIsPinModalOpen(false)} 
-        onConfirm={handlePinSwitch} 
-        title="Cashier Swap" 
-      />
+      <PinModal isOpen={isPinModalOpen} onClose={() => setIsPinModalOpen(false)} onConfirm={handlePinSwitch} title="Cashier Swap" />
 
-      {/* Main Content Area */}
-      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", (!isFullscreen || activeTab !== 'pos') ? "ml-[220px]" : "ml-0")}>
-        {activeTab === 'dashboard' ? (
-          <Dashboard user={user} onNewOrder={() => setActiveTab('pos')} />
-        ) : activeTab === 'pos' ? (
-          <POS user={user} />
-        ) : activeTab === 'inventory' ? (
-          <Inventory user={user} />
-        ) : activeTab === 'staff' ? (
-          <Staff user={user} />
-        ) : activeTab === 'customers' ? (
-          <Customers />
-        ) : activeTab === 'settings' ? (
-          <Settings user={user} onUpdateUser={(newOutlet) => setUser(prev => ({...prev, outlet_name: newOutlet.name}))} />
-        ) : activeTab === 'ai_generator' ? (
-          <AIGenerator />
-        ) : activeTab === 'reports' ? (
-          <Reports user={user} />
-        ) : activeTab === 'kds' ? (
-          <KDS user={user} />
-        ) : activeTab === 'procurement' ? (
-          <Procurement user={user} />
-        ) : activeTab === 'shift' ? (
-          <ShiftManager user={user} />
-        ) : activeTab === 'menu' ? (
-          <Menu user={user} />
-        ) : activeTab === 'distributors' ? (
-          <Distributors user={user} />
-        ) : activeTab === 'distribution' ? (
-          <Distribution user={user} />
-        ) : activeTab === 'distributor_dashboard' || activeTab === 'distributor_orders' || activeTab === 'distributor_myorders' || activeTab === 'distributor_stock' ? (
-          <DistributorPanel user={user} activeSubTab={activeTab} onTabChange={(tab) => { setActiveTab(tab); localStorage.setItem('activeTab', tab); }} />
-        ) : (
-          <div className="p-12 h-full flex flex-col items-center justify-center text-atul-pink_primary/10 font-serif gap-6 relative z-10 w-full">
-            <MaterialIcon name="auto_awesome" className="text-8xl" />
-            <h2 className="text-4xl italic tracking-tight">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} View In Progress</h2>
-          </div>
-        )}
+      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", !(activeTab === 'billing' && isFullscreen) ? "ml-[220px]" : "ml-0")}>
+         <Routes>
+            <Route path="/billing" element={<POS user={user} />} />
+            <Route path="/menu" element={<Menu user={user} />} />
+            <Route path="/inventory" element={<Inventory user={user} />} />
+            <Route path="/reports" element={<Reports user={user} />} />
+            <Route path="/settings" element={<Settings user={user} onUpdateUser={(newOutlet) => setUser(prev => ({...prev, outlet_name: newOutlet.name}))} />} />
+            {/* Catch all / fallback */}
+            <Route path="/" element={<Navigate to="/billing" replace />} />
+         </Routes>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
+
+  const handleLogin = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  };
+
+  return (
+    <BrowserRouter basename="/pos">
+       <AppContent user={user} setUser={setUser} handleLogin={handleLogin} handleLogout={handleLogout} />
+    </BrowserRouter>
   );
 }

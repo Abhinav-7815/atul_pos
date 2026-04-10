@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { outletApi } from '../services/api';
-import { 
-  Store, 
-  Receipt, 
-  Percent, 
-  Save, 
-  MapPin, 
-  Phone, 
-  Mail, 
+import { outletApi, userApi } from '../services/api';
+import {
+  Store,
+  Receipt,
+  Percent,
+  Save,
+  MapPin,
+  Phone,
+  Mail,
   CreditCard,
   CheckCircle,
   AlertCircle,
@@ -17,7 +17,13 @@ import {
   Bot,
   Sparkles,
   Cpu,
-  Coins
+  Coins,
+  Users,
+  UserPlus,
+  Eye,
+  EyeOff,
+  Trash2,
+  Shield,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -46,8 +52,23 @@ export default function Settings({ user, onUpdateUser }) {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('atul_pos_settings_active_tab') || 'general');
+
+  useEffect(() => {
+    localStorage.setItem('atul_pos_settings_active_tab', activeTab);
+    if (activeTab === 'users') fetchUsers();
+  }, [activeTab]);
   const [success, setSuccess] = useState(false);
+
+  // Users tab state
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [userForm, setUserForm] = useState({ full_name: '', phone: '', password: '', confirm_password: '', role: 'cashier' });
+  const [userFormError, setUserFormError] = useState('');
+  const [userSaving, setUserSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const [navConfig, setNavConfig] = useState({
     dashboard_visible: true,
@@ -159,6 +180,54 @@ export default function Settings({ user, onUpdateUser }) {
     }
   };
 
+  const fetchUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const res = await userApi.getUsers({});
+      setUsers(res.data?.data || res.data?.results || res.data || []);
+    } catch { setUsers([]); }
+    finally { setUsersLoading(false); }
+  };
+
+  const handleUserSubmit = async (e) => {
+    e.preventDefault();
+    setUserFormError('');
+    if (!userForm.full_name.trim()) return setUserFormError('Name is required.');
+    if (!userForm.phone.trim()) return setUserFormError('Phone number is required.');
+    if (!userForm.password) return setUserFormError('Password is required.');
+    if (userForm.password !== userForm.confirm_password) return setUserFormError('Passwords do not match.');
+    if (userForm.password.length < 6) return setUserFormError('Password must be at least 6 characters.');
+    setUserSaving(true);
+    try {
+      const payload = {
+        full_name: userForm.full_name.trim(),
+        phone: userForm.phone.trim(),
+        password: userForm.password,
+        role: userForm.role,
+        outlet: user?.outlet_id || user?.outlet || null,
+        email: `${userForm.phone.trim()}@atulpos.local`,
+      };
+      await userApi.createUser(payload);
+      setUserForm({ full_name: '', phone: '', password: '', confirm_password: '', role: 'cashier' });
+      fetchUsers();
+    } catch (err) {
+      const data = err.response?.data?.data || err.response?.data;
+      if (data && typeof data === 'object') {
+        setUserFormError(Object.entries(data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join(' | '));
+      } else {
+        setUserFormError('Failed to create user. Please try again.');
+      }
+    } finally { setUserSaving(false); }
+  };
+
+  const handleDeleteUser = async (id) => {
+    try {
+      await userApi.deleteUser(id);
+      setDeleteConfirm(null);
+      fetchUsers();
+    } catch { alert('Failed to delete user.'); }
+  };
+
   if (loading) return <div className="p-8 font-serif animate-pulse">Loading settings...</div>;
   if (!outlet) return <div className="p-8 font-serif text-red-500">Failed to load outlet configuration. Please check your connection or backend setup.</div>;
 
@@ -170,13 +239,15 @@ export default function Settings({ user, onUpdateUser }) {
           <h2 className="font-serif text-3xl font-bold">Terminal Settings</h2>
           <p className="text-atul-pink_primary/60 text-sm mt-1">Configure your outlet profile and receipt preferences</p>
         </div>
-        <button 
-           onClick={handleUpdate}
-           disabled={saving}
-           className="flex items-center gap-2 bg-atul-pink_primary text-white px-8 py-3 rounded-3xl font-bold shadow-lg shadow-atul-pink_primary/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : success ? <><CheckCircle size={18}/> Saved</> : <><Save size={18}/> Save Changes</>}
-        </button>
+        {activeTab !== 'users' && (
+          <button
+            onClick={handleUpdate}
+            disabled={saving}
+            className="flex items-center gap-2 bg-atul-pink_primary text-white px-8 py-3 rounded-3xl font-bold shadow-lg shadow-atul-pink_primary/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : success ? <><CheckCircle size={18}/> Saved</> : <><Save size={18}/> Save Changes</>}
+          </button>
+        )}
       </header>
 
       <div className="flex-1 flex gap-8 min-h-0">
@@ -186,11 +257,11 @@ export default function Settings({ user, onUpdateUser }) {
                { id: 'general', label: 'Store Profile', icon: <Store size={20}/> },
                { id: 'tax', label: 'Taxes & GST', icon: <Percent size={20}/> },
                { id: 'receipt', label: 'Receipt Designer', icon: <Receipt size={20}/> },
-               // user?.role === 'superadmin' && { id: 'navigation', label: 'Access Control', icon: <ShieldCheck size={20}/> },
+               { id: 'users', label: 'Users', icon: <Users size={20}/> },
              ].filter(Boolean).map(t => (
-               <button 
+               <button
                  key={t.id}
-                 onClick={() => setActiveTab(t.id)}
+                 onClick={() => { setActiveTab(t.id); if (t.id === 'users') fetchUsers(); }}
                  className={cn(
                    "w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all",
                    activeTab === t.id ? "bg-atul-pink_primary text-white shadow-lg" : "text-atul-gray hover:bg-white/50"
@@ -203,7 +274,7 @@ export default function Settings({ user, onUpdateUser }) {
 
           {/* Tab Content */}
           <div className="flex-1 glass rounded-[2.5rem] p-10 overflow-y-auto custom-scrollbar">
-             <form onSubmit={handleUpdate} className="space-y-8 transition-all duration-500 max-w-2xl">
+             <form onSubmit={handleUpdate} className={`space-y-8 transition-all duration-500 max-w-2xl ${activeTab === 'users' ? 'hidden' : ''}`}>
                 
                 {activeTab === 'general' && (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -366,6 +437,161 @@ export default function Settings({ user, onUpdateUser }) {
                   </motion.div>
                 )}
 
+                {false && (
+                  <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8 pb-10">
+                    {/* Header */}
+                    <h3 className="text-xl font-serif font-bold flex items-center gap-3">
+                      <div className="size-10 bg-atul-pink_soft rounded-xl flex items-center justify-center text-atul-pink_primary">
+                        <Users size={20}/>
+                      </div>
+                      Manage Users
+                    </h3>
+
+                    {/* Add User Form */}
+                    <div className="bg-white/60 rounded-[2rem] p-8 border border-white shadow-sm">
+                      <p className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <UserPlus size={14}/> Add New User
+                      </p>
+                      <form onSubmit={handleUserSubmit} className="space-y-5">
+                        <div className="grid grid-cols-2 gap-5">
+                          {/* Name */}
+                          <div className="col-span-2">
+                            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Full Name</label>
+                            <input
+                              value={userForm.full_name}
+                              onChange={e => setUserForm({ ...userForm, full_name: e.target.value })}
+                              placeholder="e.g. Ramesh Patel"
+                              className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30"
+                            />
+                          </div>
+                          {/* Phone */}
+                          <div>
+                            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Phone Number</label>
+                            <input
+                              value={userForm.phone}
+                              onChange={e => setUserForm({ ...userForm, phone: e.target.value })}
+                              placeholder="e.g. 9876543210"
+                              className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30"
+                            />
+                          </div>
+                          {/* Role */}
+                          <div>
+                            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Role</label>
+                            <select
+                              value={userForm.role}
+                              onChange={e => setUserForm({ ...userForm, role: e.target.value })}
+                              className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30 appearance-none"
+                            >
+                              <option value="outlet_manager">Admin</option>
+                              <option value="cashier">Cashier</option>
+                              <option value="kitchen">Staff / Kitchen</option>
+                            </select>
+                          </div>
+                          {/* Password */}
+                          <div>
+                            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Password</label>
+                            <div className="relative">
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={userForm.password}
+                                onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                                placeholder="Min. 6 characters"
+                                className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 pr-12 font-bold outline-none focus:border-atul-pink_primary/30"
+                              />
+                              <button type="button" onClick={() => setShowPassword(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-atul-gray/50 hover:text-atul-pink_primary">
+                                {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                              </button>
+                            </div>
+                          </div>
+                          {/* Confirm Password */}
+                          <div>
+                            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Confirm Password</label>
+                            <div className="relative">
+                              <input
+                                type={showConfirm ? 'text' : 'password'}
+                                value={userForm.confirm_password}
+                                onChange={e => setUserForm({ ...userForm, confirm_password: e.target.value })}
+                                placeholder="Re-enter password"
+                                className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 pr-12 font-bold outline-none focus:border-atul-pink_primary/30"
+                              />
+                              <button type="button" onClick={() => setShowConfirm(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-atul-gray/50 hover:text-atul-pink_primary">
+                                {showConfirm ? <EyeOff size={16}/> : <Eye size={16}/>}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {userFormError && (
+                          <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-2xl p-4 text-sm text-red-600 font-semibold">
+                            <AlertCircle size={16} className="shrink-0 mt-0.5"/>
+                            {userFormError}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={userSaving}
+                          className="flex items-center gap-2 bg-atul-pink_primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-atul-pink_primary/25 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                        >
+                          {userSaving ? 'Creating...' : <><UserPlus size={16}/> Create User</>}
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Users List */}
+                    <div className="bg-white/60 rounded-[2rem] border border-white shadow-sm overflow-hidden">
+                      <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between">
+                        <p className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest flex items-center gap-2">
+                          <Shield size={14}/> Active Users ({users.length})
+                        </p>
+                        {usersLoading && <span className="text-xs text-atul-gray/50 animate-pulse">Refreshing...</span>}
+                      </div>
+
+                      {usersLoading && users.length === 0 ? (
+                        <div className="p-8 text-center text-sm text-atul-gray/40 font-semibold animate-pulse">Loading users...</div>
+                      ) : users.length === 0 ? (
+                        <div className="p-8 text-center text-sm text-atul-gray/40 font-semibold">No users found. Add one above.</div>
+                      ) : (
+                        <div className="divide-y divide-gray-50">
+                          {users.map(u => {
+                            const roleMap = { outlet_manager: { label: 'Admin', color: 'bg-blue-50 text-blue-600' }, cashier: { label: 'Cashier', color: 'bg-amber-50 text-amber-600' }, kitchen: { label: 'Staff', color: 'bg-emerald-50 text-emerald-600' }, superadmin: { label: 'Super Admin', color: 'bg-purple-50 text-purple-600' }, client_admin: { label: 'Client Admin', color: 'bg-indigo-50 text-indigo-600' } };
+                            const role = roleMap[u.role] || { label: u.role, color: 'bg-gray-50 text-gray-500' };
+                            return (
+                              <div key={u.id} className="flex items-center justify-between px-8 py-5 hover:bg-gray-50/50 transition-colors">
+                                <div className="flex items-center gap-4">
+                                  <div className="size-10 rounded-2xl bg-atul-pink_soft flex items-center justify-center font-black text-atul-pink_primary text-sm">
+                                    {(u.full_name || u.email || '?')[0].toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <p className="font-bold text-sm text-atul-charcoal">{u.full_name || '—'}</p>
+                                    <p className="text-xs text-atul-gray/60 mt-0.5">{u.phone || u.email || '—'}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl ${role.color}`}>{role.label}</span>
+                                  {String(u.id) !== String(user?.id) && u.role !== 'superadmin' && (
+                                    deleteConfirm === u.id ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-red-500 font-bold">Confirm?</span>
+                                        <button onClick={() => handleDeleteUser(u.id)} className="text-xs bg-red-500 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-red-600 transition-colors">Yes</button>
+                                        <button onClick={() => setDeleteConfirm(null)} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-xl font-bold hover:bg-gray-200 transition-colors">No</button>
+                                      </div>
+                                    ) : (
+                                      <button onClick={() => setDeleteConfirm(u.id)} className="size-9 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors">
+                                        <Trash2 size={15}/>
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* Access Control Tab - Commented Out
                 {activeTab === 'navigation' && user?.role === 'superadmin' && (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8 pb-10">
@@ -434,6 +660,108 @@ export default function Settings({ user, onUpdateUser }) {
                 End of Access Control Tab */}
 
              </form>
+
+             {/* Users Tab — outside <form> to avoid nested form conflict */}
+             {activeTab === 'users' && (
+               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8 pb-10 max-w-2xl">
+                 <h3 className="text-xl font-serif font-bold flex items-center gap-3">
+                   <div className="size-10 bg-atul-pink_soft rounded-xl flex items-center justify-center text-atul-pink_primary"><Users size={20}/></div>
+                   Manage Users
+                 </h3>
+
+                 {/* Add User Form */}
+                 <div className="bg-white/60 rounded-[2rem] p-8 border border-white shadow-sm">
+                   <p className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest mb-6 flex items-center gap-2"><UserPlus size={14}/> Add New User</p>
+                   <div className="space-y-5">
+                     <div className="grid grid-cols-2 gap-5">
+                       <div className="col-span-2">
+                         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Full Name</label>
+                         <input value={userForm.full_name} onChange={e => setUserForm({ ...userForm, full_name: e.target.value })} placeholder="e.g. Ramesh Patel" className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30" />
+                       </div>
+                       <div>
+                         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Phone Number</label>
+                         <input value={userForm.phone} onChange={e => setUserForm({ ...userForm, phone: e.target.value })} placeholder="e.g. 9876543210" className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30" />
+                       </div>
+                       <div>
+                         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Role</label>
+                         <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/30 appearance-none">
+                           <option value="outlet_manager">Admin</option>
+                           <option value="cashier">Cashier</option>
+                           <option value="kitchen">Staff / Kitchen</option>
+                         </select>
+                       </div>
+                       <div>
+                         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Password</label>
+                         <div className="relative">
+                           <input type={showPassword ? 'text' : 'password'} value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} placeholder="Min. 6 characters" className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 pr-12 font-bold outline-none focus:border-atul-pink_primary/30" />
+                           <button type="button" onClick={() => setShowPassword(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-atul-gray/50 hover:text-atul-pink_primary">{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                         </div>
+                       </div>
+                       <div>
+                         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Confirm Password</label>
+                         <div className="relative">
+                           <input type={showConfirm ? 'text' : 'password'} value={userForm.confirm_password} onChange={e => setUserForm({ ...userForm, confirm_password: e.target.value })} placeholder="Re-enter password" className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 pr-12 font-bold outline-none focus:border-atul-pink_primary/30" />
+                           <button type="button" onClick={() => setShowConfirm(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-atul-gray/50 hover:text-atul-pink_primary">{showConfirm ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                         </div>
+                       </div>
+                     </div>
+                     {userFormError && (
+                       <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-2xl p-4 text-sm text-red-600 font-semibold">
+                         <AlertCircle size={16} className="shrink-0 mt-0.5"/>{userFormError}
+                       </div>
+                     )}
+                     <button type="button" onClick={handleUserSubmit} disabled={userSaving} className="flex items-center gap-2 bg-atul-pink_primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-atul-pink_primary/25 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
+                       {userSaving ? 'Creating...' : <><UserPlus size={16}/> Create User</>}
+                     </button>
+                   </div>
+                 </div>
+
+                 {/* Users List */}
+                 <div className="bg-white/60 rounded-[2rem] border border-white shadow-sm overflow-hidden">
+                   <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between">
+                     <p className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest flex items-center gap-2"><Shield size={14}/> Active Users ({users.length})</p>
+                     {usersLoading && <span className="text-xs text-atul-gray/50 animate-pulse">Refreshing...</span>}
+                   </div>
+                   {usersLoading && users.length === 0 ? (
+                     <div className="p-8 text-center text-sm text-atul-gray/40 font-semibold animate-pulse">Loading users...</div>
+                   ) : users.length === 0 ? (
+                     <div className="p-8 text-center text-sm text-atul-gray/40 font-semibold">No users found.</div>
+                   ) : (
+                     <div className="divide-y divide-gray-50">
+                       {users.map(u => {
+                         const roleMap = { outlet_manager: { label: 'Admin', color: 'bg-blue-50 text-blue-600' }, cashier: { label: 'Cashier', color: 'bg-amber-50 text-amber-600' }, kitchen: { label: 'Staff', color: 'bg-emerald-50 text-emerald-600' }, superadmin: { label: 'Super Admin', color: 'bg-purple-50 text-purple-600' }, client_admin: { label: 'Client Admin', color: 'bg-indigo-50 text-indigo-600' } };
+                         const role = roleMap[u.role] || { label: u.role, color: 'bg-gray-50 text-gray-500' };
+                         return (
+                           <div key={u.id} className="flex items-center justify-between px-8 py-5 hover:bg-gray-50/50 transition-colors">
+                             <div className="flex items-center gap-4">
+                               <div className="size-10 rounded-2xl bg-atul-pink_soft flex items-center justify-center font-black text-atul-pink_primary text-sm">{(u.full_name || u.email || '?')[0].toUpperCase()}</div>
+                               <div>
+                                 <p className="font-bold text-sm text-atul-charcoal">{u.full_name || '—'}</p>
+                                 <p className="text-xs text-atul-gray/60 mt-0.5">{u.phone || u.email || '—'}</p>
+                               </div>
+                             </div>
+                             <div className="flex items-center gap-4">
+                               <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl ${role.color}`}>{role.label}</span>
+                               {String(u.id) !== String(user?.id) && u.role !== 'superadmin' && (
+                                 deleteConfirm === u.id ? (
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-xs text-red-500 font-bold">Confirm?</span>
+                                     <button type="button" onClick={() => handleDeleteUser(u.id)} className="text-xs bg-red-500 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-red-600 transition-colors">Yes</button>
+                                     <button type="button" onClick={() => setDeleteConfirm(null)} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-xl font-bold hover:bg-gray-200 transition-colors">No</button>
+                                   </div>
+                                 ) : (
+                                   <button type="button" onClick={() => setDeleteConfirm(u.id)} className="size-9 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"><Trash2 size={15}/></button>
+                                 )
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })}
+                     </div>
+                   )}
+                 </div>
+               </motion.div>
+             )}
           </div>
       </div>
     </div>

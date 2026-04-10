@@ -48,7 +48,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'customer_phone': {'write_only': True, 'required': False, 'allow_null': True}
         }
 
-    customer_phone = serializers.CharField(write_only=True, required=False, allow_null=True)
+    customer_phone = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True)
 
     def create(self, validated_data):
         import json

@@ -654,11 +654,12 @@ export default function Menu({ user }) {
                         </button>
                      </div>
 
-                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         {[
                           { label: '100gm', key: '100gm', ratio: 1 },
                           { label: '250gm', key: '250gm', ratio: 2.5 },
                           { label: '500gm', key: '500gm', ratio: 5 },
+                          { label: '750gm', key: '750gm', ratio: 7.5 },
                           { label: '1kg', key: '1kg', ratio: 10 },
                         ].map((qty, idx) => {
                           const normalizeName = (n) => n?.toLowerCase().replace('gms', 'gm');
@@ -686,6 +687,7 @@ export default function Menu({ user }) {
                                       if (autoCalculatePrices && qty.key === '100gm') {
                                          updateQty('250gm', val * 2.5);
                                          updateQty('500gm', val * 5);
+                                         updateQty('750gm', val * 7.5);
                                          updateQty('1kg', val * 10);
                                       }
                                       setProdForm({...prodForm, variants: newVariants, base_price: 0, display_price: 0});

@@ -46,7 +46,11 @@ export default function Reports({ user }) {
   const [selectedDate, setSelectedDate] = useState(today);
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
-  const [dateMode, setDateMode] = useState('single'); // 'single' or 'range'
+  const [dateMode, setDateMode] = useState(() => localStorage.getItem('atul_pos_reports_date_mode') || 'single');
+
+  useEffect(() => {
+    localStorage.setItem('atul_pos_reports_date_mode', dateMode);
+  }, [dateMode]);
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +59,13 @@ export default function Reports({ user }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [voidPin, setVoidPin] = useState('');
+  const [bulkDeletePassword, setBulkDeletePassword] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize] = useState(50);
 
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -75,7 +85,8 @@ export default function Reports({ user }) {
 
       const params = {
         outlet: user?.outlet,
-        limit: 500,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
         ordering: '-created_at'
       };
 
@@ -92,9 +103,14 @@ export default function Reports({ user }) {
       // Extremely defensive data extraction
       const rawData = res?.data;
       const orderData = rawData?.data || rawData?.results || (Array.isArray(rawData) ? rawData : []);
+      const count = rawData?.count || (Array.isArray(rawData) ? rawData.length : 0);
       const ordersArray = Array.isArray(orderData) ? orderData : [];
 
       setOrders(ordersArray);
+      setTotalCount(count);
+      
+      // For stats, we might want to fetch without pagination if needed, but for now we calculate from current page
+      // Actually, typically we should have a separate stats call.
       calculateStats(ordersArray);
     } catch (err) {
       console.error("Failed to fetch orders", err);
@@ -106,8 +122,36 @@ export default function Reports({ user }) {
   };
 
   useEffect(() => {
-    fetchOrders();
+    setPage(1);
   }, [selectedDate, startDate, endDate, dateMode, user?.outlet]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [selectedDate, startDate, endDate, dateMode, user?.outlet, page]);
+
+  const handleBulkDelete = async () => {
+    if (!bulkDeletePassword) {
+      alert("Password is required.");
+      return;
+    }
+    if (!window.confirm("CRITICAL: Are you sure you want to delete ALL orders for the current outlet? This action is IRREVERSIBLE and will also clear related item records.")) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await orderApi.bulkDeleteOrders({ password: bulkDeletePassword });
+      alert("All records successfully cleared.");
+      setShowBulkDeleteConfirm(false);
+      setBulkDeletePassword('');
+      setPage(1);
+      fetchOrders();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Bulk delete failed. Incorrect password.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const calculateStats = (ordersList) => {
     const safeList = Array.isArray(ordersList) ? ordersList : [];
@@ -311,21 +355,15 @@ export default function Reports({ user }) {
 
   const handleDeleteOrder = async (orderId) => {
     if (!voidPin) {
-      alert("Manager PIN is required.");
+      alert("Password is required.");
       return;
     }
     try {
-      await orderApi.voidOrder(orderId, { 
-        pin: voidPin,
-        reason: 'Cancelled from reports' 
-      });
-      const updatedOrders = orders.filter(o => o.id !== orderId);
-      setOrders(updatedOrders);
-      calculateStats(updatedOrders);
+      await orderApi.deleteOrder(orderId, { pin: voidPin });
       setShowDeleteConfirm(null);
       setVoidPin('');
       setSelectedOrder(null);
-      alert('Order deleted successfully!');
+      fetchOrders(); // refetch so renumbered order numbers reflect immediately
     } catch (err) {
       console.error('Failed to delete order', err);
       const errorMsg = err.response?.data?.error || 'Failed to delete order. Please try again.';
@@ -423,6 +461,14 @@ export default function Reports({ user }) {
               <Printer size={16}/>
               Print
             </button>
+
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="bg-red-50 text-red-500 rounded-2xl px-5 py-2.5 flex items-center gap-2 font-black text-[11px] uppercase tracking-wider hover:bg-red-500 hover:text-white transition-all border border-red-200 shadow-sm"
+            >
+              <Trash2 size={16}/>
+              Delete All
+            </button>
           </div>
         </div>
 
@@ -477,7 +523,7 @@ export default function Reports({ user }) {
           <div className="ml-auto flex items-center gap-2 px-4 py-2.5 bg-atul-pink_primary/5 rounded-2xl border border-atul-pink_primary/10">
             <div className="size-2 bg-atul-pink_primary rounded-full animate-pulse"></div>
             <span className="text-[11px] font-black uppercase tracking-widest text-atul-charcoal/60">
-              {filteredOrders.length} {filteredOrders.length === 1 ? 'Record' : 'Records'}
+              {totalCount} {totalCount === 1 ? 'Record' : 'Records'}
             </span>
           </div>
         </div>
@@ -497,74 +543,102 @@ export default function Reports({ user }) {
             <p className="text-sm font-bold text-atul-charcoal/30 uppercase tracking-widest">Adjust filters or select another date</p>
           </div>
         ) : (
-          <div className="space-y-4 pb-10">
-            <AnimatePresence mode="popLayout">
-              {filteredOrders.map((order, index) => (
-                <motion.div
-                  key={order.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.02 }}
-                  className="bg-white/80 backdrop-blur-md rounded-[2rem] p-7 border border-white shadow-sm hover:shadow-xl hover:scale-[1.005] transition-all group relative overflow-hidden"
-                >
-                  <div className="flex items-start justify-between gap-8 relative z-10">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-3 mb-5">
-                        <span className="text-xl font-black text-atul-charcoal tracking-tight professional-digits">#{order.order_number}</span>
-                        <span className={cn(
-                          "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border",
-                          getPaymentMethodColor(order.payments?.[0]?.method || order.payment_mode)
-                        )}>
-                          {order.payments?.[0]?.method || order.payment_mode || 'Cash'}
-                        </span>
-                        <div className="flex items-center gap-1.5 text-atul-charcoal/30">
-                          <Clock size={12}/>
-                          <span className="text-[10px] font-black uppercase tracking-widest">
-                            {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+          <div className="px-8 pb-32 pt-2">
+            <div className="bg-white/50 backdrop-blur-md rounded-[2.5rem] border border-white shadow-xl shadow-atul-pink_primary/5 overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-atul-pink_primary/[0.02] border-b border-atul-pink_primary/10">
+                    <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60">Reference</th>
+                    <th className="px-6 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60">Timestamp</th>
+                    <th className="px-6 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60">Method</th>
+                    <th className="px-6 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60">Items Summary</th>
+                    <th className="px-6 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60 text-right">Revenue</th>
+                    <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-atul-pink_primary/60 text-right">Management</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-atul-pink_primary/5">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {filteredOrders.map((order, index) => (
+                      <motion.tr 
+                        key={order.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.02 }}
+                        className="group hover:bg-white transition-all cursor-default"
+                      >
+                        <td className="px-10 py-5">
+                          <span className="font-black text-atul-charcoal professional-digits tracking-tight">#{order.order_number}</span>
+                        </td>
+                        <td className="px-6 py-5">
+                           <div className="flex flex-col">
+                             <span className="text-xs font-bold text-atul-charcoal">{new Date(order.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                             <span className="text-[10px] font-bold text-atul-charcoal/30 uppercase">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                           </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className={cn(
+                            "px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                            getPaymentMethodColor(order.payments?.[0]?.method || order.payment_mode)
+                          )}>
+                            {order.payments?.[0]?.method || order.payment_mode || 'Cash'}
                           </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-                        {Array.isArray(order.items) && order.items.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-3 text-xs">
-                            <div className="size-6 rounded-lg bg-atul-pink_soft flex items-center justify-center text-atul-pink_primary font-black text-[10px]">
-                              {Math.round(item.quantity) || 1}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-bold text-atul-charcoal truncate">{item.product_name}</p>
-                              <p className="text-[9px] font-bold text-atul-charcoal/30 uppercase tracking-tighter">₹{parseFloat(item.price || 0).toFixed(0)} / unit</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <p className="text-[10px] font-black text-atul-charcoal/20 uppercase tracking-widest mb-1">Final Amount</p>
-                      <p className="text-3xl font-black text-atul-pink_primary professional-digits tracking-tighter leading-none mb-4">
-                        ₹{parseFloat(order.total_amount || 0).toLocaleString()}
-                      </p>
-                      
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setSelectedOrder(order)} className="size-10 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-atul-pink_primary hover:border-atul-pink_primary/30 transition-all active:scale-90">
-                          <Eye size={16} />
-                        </button>
-                        <button onClick={() => handleEditOrder(order)} className="size-10 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-blue-500 hover:border-blue-100 transition-all active:scale-90">
-                          <Edit2 size={16} />
-                        </button>
-                        <button onClick={() => setShowDeleteConfirm(order.id)} className="size-10 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-red-500 hover:border-red-100 transition-all active:scale-90">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                        </td>
+                        <td className="px-6 py-5 overflow-hidden">
+                           <div className="text-[11px] font-bold text-atul-charcoal truncate max-w-[240px] opacity-60 group-hover:opacity-100 transition-opacity">
+                              {Array.isArray(order.items) ? order.items.map(it => it.product_name).join(', ') : 'No items'}
+                           </div>
+                        </td>
+                        <td className="px-6 py-5 text-right font-black text-atul-pink_primary professional-digits text-lg tracking-tight">
+                           ₹{parseFloat(order.total_amount || 0).toLocaleString()}
+                        </td>
+                        <td className="px-10 py-5 text-right">
+                           <div className="flex items-center justify-end gap-2 transition-all">
+                             <button onClick={() => setSelectedOrder(order)} className="size-9 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-atul-pink_primary transition-all active:scale-90" title="View Details"><Eye size={16} /></button>
+                             <button onClick={() => handleEditOrder(order)} className="size-9 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-blue-500 transition-all active:scale-90" title="Modify Order"><Edit2 size={16} /></button>
+                             <button onClick={() => setShowDeleteConfirm(order.id)} className="size-9 bg-white rounded-2xl border border-atul-pink_soft shadow-sm flex items-center justify-center text-atul-charcoal/40 hover:text-red-500 transition-all active:scale-90" title="Void Transaction"><Trash2 size={16} /></button>
+                           </div>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Fixed Pagination Footer */}
+      {(totalCount > 0 || filteredOrders.length > 0) && (
+        <div className="bg-white/90 backdrop-blur-md border-t border-atul-pink_primary/5 px-10 py-5 flex items-center justify-between z-10 shrink-0 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.02)]">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-atul-charcoal/40">Transaction Ledger</span>
+            <span className="text-[11px] font-bold text-atul-charcoal">
+                Showing {filteredOrders.length} of {totalCount || filteredOrders.length} records
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={() => { setPage(p => Math.max(1, p - 1)); }}
+              disabled={page === 1}
+              className="px-8 py-3 bg-white rounded-[1.25rem] border border-atul-pink_soft text-atul-pink_primary font-bold text-[10px] uppercase tracking-widest disabled:opacity-30 hover:bg-atul-pink_soft transition-all active:scale-95 shadow-sm"
+            >
+              Previous
+            </button>
+            <div className="font-black text-atul-charcoal text-[11px] uppercase tracking-widest px-6 py-3 bg-atul-pink_soft/20 rounded-full border border-atul-pink_soft/30">
+               Page {page} of {Math.max(1, Math.ceil((totalCount || filteredOrders.length) / pageSize))}
+            </div>
+            <button 
+              onClick={() => { setPage(p => p + 1); }}
+              disabled={page * pageSize >= (totalCount || filteredOrders.length)}
+              className="px-8 py-3 bg-white rounded-[1.25rem] border border-atul-pink_soft text-atul-pink_primary font-bold text-[10px] uppercase tracking-widest disabled:opacity-30 hover:bg-atul-pink_soft transition-all active:scale-95 shadow-sm"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Simplified Modal logic omitted for brevity, but I'll add the essential Check Order modal */}
       <AnimatePresence>
@@ -710,17 +784,51 @@ export default function Reports({ user }) {
               <div className="mb-6">
                 <input
                   type="password"
-                  placeholder="Enter Manager PIN"
-                  maxLength={4}
+                  placeholder="Enter your password"
                   value={voidPin}
-                  onChange={e => setVoidPin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full bg-red-50/50 border-2 border-red-100 rounded-2xl py-4 text-center text-2xl font-black tracking-[0.5em] text-red-500 focus:border-red-500 focus:outline-none transition-all placeholder:text-[10px] placeholder:tracking-widest placeholder:font-black"
+                  onChange={e => setVoidPin(e.target.value)}
+                  className="w-full bg-red-50/50 border-2 border-red-100 rounded-2xl py-4 px-5 text-sm font-bold text-red-500 focus:border-red-500 focus:outline-none transition-all placeholder:text-xs placeholder:tracking-widest placeholder:font-semibold placeholder:text-red-300"
                 />
               </div>
 
               <div className="flex gap-3">
                  <button onClick={() => { setShowDeleteConfirm(null); setVoidPin(''); }} className="flex-1 py-4 bg-gray-50 rounded-2xl font-black text-[11px] uppercase tracking-widest text-atul-charcoal/40 hover:bg-gray-100 transition-all">Cancel</button>
                  <button onClick={() => handleDeleteOrder(showDeleteConfirm)} className="flex-1 py-4 bg-red-500 rounded-2xl font-black text-[11px] uppercase tracking-widest text-white shadow-xl shadow-red-500/20 hover:scale-105 active:scale-95 transition-all">Void Now</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Delete Confirm Modal */}
+      <AnimatePresence>
+        {showBulkDeleteConfirm && (
+          <div className="fixed inset-0 bg-red-900/10 backdrop-blur-md z-[120] flex items-center justify-center p-6" onClick={() => setShowBulkDeleteConfirm(false)}>
+            <motion.div 
+               initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+               className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl border-4 border-red-50 text-center"
+               onClick={e => e.stopPropagation()}
+            >
+              <div className="size-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500 shadow-inner">
+                <Trash2 size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-atul-charcoal mb-4">Wipe Database?</h3>
+              <p className="text-sm font-bold text-atul-charcoal/40 uppercase tracking-widest leading-relaxed mb-6 italic">This will delete ALL orders across all dates for the current outlet.</p>
+              
+              <div className="mb-6">
+                <input
+                  type="password"
+                  placeholder="Enter your password"
+                  autoFocus
+                  value={bulkDeletePassword}
+                  onChange={e => setBulkDeletePassword(e.target.value)}
+                  className="w-full bg-red-50/50 border-2 border-red-100 rounded-2xl py-4 px-5 text-sm font-bold text-red-500 focus:border-red-500 focus:outline-none transition-all placeholder:text-xs placeholder:tracking-widest placeholder:font-semibold placeholder:text-red-300"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                 <button onClick={() => { setShowBulkDeleteConfirm(false); setBulkDeletePassword(''); }} className="flex-1 py-4 bg-gray-50 rounded-2xl font-black text-[11px] uppercase tracking-widest text-atul-charcoal/40 hover:bg-gray-100 transition-all">Cancel</button>
+                 <button onClick={handleBulkDelete} className="flex-1 py-4 bg-red-500 rounded-2xl font-black text-[11px] uppercase tracking-widest text-white shadow-xl shadow-red-500/20 hover:scale-105 active:scale-95 transition-all">Clear All</button>
               </div>
             </motion.div>
           </div>

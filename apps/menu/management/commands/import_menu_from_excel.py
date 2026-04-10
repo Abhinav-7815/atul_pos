@@ -49,10 +49,10 @@ class Command(BaseCommand):
             df_products = pd.read_excel(file_path, sheet_name='Products', header=None)
 
             df_categories.columns = ['category_name', 'display_order']
-            df_products.columns = ['product_name', 'category_id', 'price_100gm', 'price_250gm', 'price_500gm', 'price_1kg']
+            df_products.columns = ['product_name', 'category_id', 'price_100gm', 'price_250gm', 'price_500gm', 'price_750gm', 'price_1kg']
 
             # Handle '--' in prices
-            for col in ['price_100gm', 'price_250gm', 'price_500gm', 'price_1kg']:
+            for col in ['price_100gm', 'price_250gm', 'price_500gm', 'price_750gm', 'price_1kg']:
                 df_products[col] = pd.to_numeric(df_products[col], errors='coerce')
 
             self.stdout.write(self.style.SUCCESS(f"✓ Found {len(df_categories)} categories"))
@@ -217,6 +217,11 @@ class Command(BaseCommand):
 
                     if pd.notna(prod_row['price_500gm']):
                         variant_data.append(('500gm', Decimal(str(prod_row['price_500gm']))))
+                        if len(variant_data) > 1:
+                            has_variants = True
+
+                    if pd.notna(prod_row['price_750gm']):
+                        variant_data.append(('750gm', Decimal(str(prod_row['price_750gm']))))
                         if len(variant_data) > 1:
                             has_variants = True
 

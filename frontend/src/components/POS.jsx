@@ -12,6 +12,7 @@ import {
 import { menuApi, orderApi } from '../services/api';
 import { inventoryApi } from '../services/api';
 import { offlineService } from '../services/offline';
+import { printReceipt, printKOT } from '../services/printer';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Fullscreen } from 'lucide-react';
@@ -74,6 +75,13 @@ const getVariationsForItem = (item) => {
     { value: 4, label: '4 Qty' },
     { value: 5, label: '5 Qty' },
   ];
+};
+
+const format100g = (name, qty = 1) => {
+  if (!name) return name;
+  const is100g = ['100g', '100gm', '100gms', '100gram', '100grams'].includes(name.toLowerCase().replace(/\\s/g, ''));
+  if (is100g) return qty === 1 ? '1 Cup' : `${qty} Cups`;
+  return name;
 };
 
 export default function POS({ user }) {
@@ -185,50 +193,95 @@ export default function POS({ user }) {
     setSyncing(false);
   };
 
+  const allProductsRef = useRef([]);
+
   const loadData = async () => {
     try {
-      setLoading(true);
-      const catRes = await menuApi.getCategories();
+      // Step 1: load from cache instantly (zero wait)
+      const [catRes, prodRes] = await Promise.all([
+        menuApi.getCategories(),
+        menuApi.getProducts(),
+      ]);
       const allCats = catRes.data?.data || catRes.data || [];
-      setCategories(allCats);
+      const allProds = prodRes.data?.data || prodRes.data || [];
+      allProductsRef.current = allProds;
+
       if (allCats.length > 0) {
-        setSelectedCategory(allCats[0].id);
-        const prodRes = await menuApi.getProducts({ category: allCats[0].id });
-        setProducts(prodRes.data?.data || prodRes.data || []);
+        setCategories(allCats);
+        const firstCat = allCats[0].id;
+        setSelectedCategory(firstCat);
+        setProducts(allProds.filter(p => p.category === firstCat));
       }
-      // Fetch stock levels
+      setLoading(false);
+
+      // Step 2: if data came from cache, refresh in background silently
+      if (catRes.fromCache || prodRes.fromCache) {
+        const [freshCat, freshProd] = await Promise.all([
+          menuApi.getCategories(true),
+          menuApi.getProducts(null, true),
+        ]);
+        const freshCats = freshCat.data?.data || freshCat.data || [];
+        const freshProds = freshProd.data?.data || freshProd.data || [];
+        allProductsRef.current = freshProds;
+        setCategories(freshCats);
+        setSelectedCategory(sc => {
+          const activeCat = sc || freshCats[0]?.id;
+          setProducts(freshProds.filter(p => p.category === activeCat));
+          return activeCat;
+        });
+      }
+
+      // Step 3: stock levels (non-critical, background)
       try {
         const stockRes = await inventoryApi.getStocks({ outlet: user?.outlet });
         const stocks = stockRes.data?.data || stockRes.data?.results || stockRes.data || [];
         const map = {};
-        stocks.forEach(s => { map[s.product] = { quantity: s.quantity, status: s.status }; });
+        stocks.forEach(s => { 
+          const key = s.variant ? `${s.product}_${s.variant}` : `${s.product}`;
+          map[key] = { quantity: s.quantity, status: s.status }; 
+        });
         setStockMap(map);
-      } catch (_) { /* non-critical, proceed without stock data */ }
-    } catch (err) { console.error("Failed to load POS data", err); }
-    finally { setLoading(false); }
+      } catch (_) {}
+    } catch (err) {
+      console.error("Failed to load POS data", err);
+      setLoading(false);
+    }
+  };
+
+  // Derives the per-gram rate from the 1kg variant, falling back to the product's base/default price
+  const getPricePerGram = (item) => {
+    if (!item) return 0;
+    const variants = item.product?.variants || [];
+    // Look for 1kg variant
+    const oneKgVariant = variants.find(v =>
+      v.name?.toLowerCase().includes('1kg') ||
+      v.name?.toLowerCase().includes('1 kg') ||
+      v.name?.toLowerCase() === '1000gm' ||
+      v.name?.toLowerCase() === '1000g'
+    );
+    const oneKgPrice = oneKgVariant
+      ? Number(oneKgVariant.current_price || oneKgVariant.price_delta || 0)
+      : null;
+    if (oneKgPrice && oneKgPrice > 0) return oneKgPrice / 1000;
+    // Fallback: use selected variant or base price, assume it's a per-kg rate
+    const fallbackPrice = calculateItemPrice(item);
+    return fallbackPrice > 0 ? fallbackPrice / 1000 : 0;
   };
 
   const handleCustomPricing = (v) => {
     if (!managerItem) return;
     setCalcMode('qty');
-    // If v is a preset, use its value. If it's the "Custom" button, use current managerItem qty.
-    const initialQty = v && v.value !== 'custom' ? v.value : managerItem.qty;
-    setCalcQty(initialQty.toString());
-    const itemPrice = calculateItemPrice(managerItem);
-    setCalcPrice((itemPrice * initialQty).toFixed(2));
-    setCalcValue(initialQty.toString());
+    // Always start at 0 so user types fresh
+    setCalcQty('0');
+    setCalcPrice('0');
+    setCalcValue('0');
     setShowCalculator(true);
   };
 
-  const handleCategorySelect = async (id) => {
+  const handleCategorySelect = (id) => {
     setSelectedCategory(id);
     setSearchQuery('');
-    try {
-      setLoading(true);
-      const prodRes = await menuApi.getProducts({ category: id });
-      setProducts(prodRes.data?.data || prodRes.data || []);
-    } catch (err) { console.error("Failed to load products", err); }
-    finally { setLoading(false); }
+    setProducts(allProductsRef.current.filter(p => p.category === id));
   };
 
   const handleProductClick = (product) => {
@@ -246,9 +299,10 @@ export default function POS({ user }) {
   };
 
 
-  const addToCartFromManager = () => {
-    if (!managerItem) return;
-    const { product, variant, modifiers, qty, unitInfo, manualPrice, customPrice } = managerItem;
+  const addToCartFromManager = (explicitItem) => {
+    const itemToAdd = (explicitItem && explicitItem.product) ? explicitItem : managerItem;
+    if (!itemToAdd) return;
+    const { product, variant, modifiers, qty, unitInfo, manualPrice, customPrice } = itemToAdd;
     
     setCart(prev => {
       const variantId = variant ? variant.id : null;
@@ -394,15 +448,16 @@ export default function POS({ user }) {
   const subtotal = total - tax;
   const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
 
-  const handlePlaceOrder = async () => {
+  const handlePlaceOrder = async (mode) => {
     if (cart.length === 0) return;
+    const resolvedMode = mode || paymentMode || 'Cash';
     
     const orderData = {
       order_type: orderType,
       table_number: tableNo || null,
       notes: customerName ? `Customer: ${customerName}` : '',
-      customer_phone: customerPhone,
-      payment_mode: paymentMode === 'Select' ? 'Cash' : paymentMode, // Use current state or default
+      customer_phone: customerPhone || null,
+      payment_mode: resolvedMode,
       items: cart.map(item => ({
         product: item.product.id,
         variant: item.variant ? item.variant.id : null,
@@ -446,103 +501,38 @@ export default function POS({ user }) {
       setLastOrder({ ...or, receipt: rr, cartSnapshot: [...cart] });
       setStep('success');
       setCart([]);
+      loadData(); // REFRESH STOCK IMMEDIATELY AFTER ORDERING
       setCustomerPhone('');
       setCustomerName('');
       setTableNo('');
-    } catch (err) { 
-      console.error("Failed to place order", err); 
-      alert(err.response?.data?.error || "Failed to place order. Saving offline...");
+    } catch (err) {
+      console.error("Failed to place order", err);
+      const status = err.response?.status;
+      const serverMsg = err.response?.data?.error || err.response?.data?.detail
+        || (err.response?.data && typeof err.response.data === 'object' ? JSON.stringify(err.response.data) : null);
+      if (!err.response) {
+        // Network error — no server response
+        alert("Cannot reach server. Order saved offline.");
+      } else if (status === 401) {
+        alert("Session expired. Please log in again.");
+      } else {
+        alert(serverMsg || `Order failed (${status}). Please try again.`);
+      }
       offlineService.saveOrder(orderData);
-    } finally { 
+    } finally {
       setIsSubmitting(false); 
     }
   };
 
   const handlePrintBill = useCallback(() => {
-    if (!receiptRef.current) return;
-    
-    // Create hidden iframe for printing
-    let iframe = document.getElementById('print-iframe');
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id = 'print-iframe';
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0px';
-      iframe.style.height = '0px';
-      iframe.style.border = 'none';
-      document.body.appendChild(iframe);
-    }
-
-    const content = `
-      <html><head><title>Receipt</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700;800&display=swap');
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{font-family:'Inter',sans-serif;width:80mm;padding:4mm;color:#000;font-size:11px;line-height:1.2;background:white;}
-        .center{text-align:center;} .bold{font-weight:700;} .mono{font-family:'JetBrains Mono',monospace;}
-        .divider{border-top:1px dashed #999;margin:6px 0;} .double-divider{border-top:2px solid #000;margin:6px 0;}
-        .row{display:flex;justify-content:space-between;padding:2px 0;}
-        .items-table{width:100%;border-collapse:collapse;margin:4px 0;}
-        .items-table td{padding:3px 0;vertical-align:top;}
-        .items-table .qty{width:30px;text-align:center;} .items-table .price{text-align:right;width:70px;}
-        .total-row{font-size:14px;font-weight:800;} .header-logo{font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:2px;}
-        .small{font-size:9px;color:#666;} .variant{font-size:9px;color:#444;display:block;margin-top:2px;}
-        @media print{@page{margin:0;size:80mm auto;} body{width:80mm;}}
-      </style></head><body>
-        ${receiptRef.current.innerHTML}
-        <script>window.onload=function(){window.focus();window.print();};</script>
-      </body></html>
-    `;
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(content);
-    doc.close();
-  }, []);
+    if (!lastOrder) return;
+    printReceipt({ receiptRef });
+  }, [lastOrder]);
 
   const handlePrintKOT = useCallback(() => {
-    if (!kotRef.current) return;
-    
-    let iframe = document.getElementById('print-iframe');
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id = 'print-iframe';
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0px';
-      iframe.style.height = '0px';
-      iframe.style.border = 'none';
-      document.body.appendChild(iframe);
-    }
-
-    const content = `
-      <html><head><title>KOT</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{font-family:'Inter',sans-serif;width:58mm;padding:4mm;color:#000;background:white;}
-        .center{text-align:center;} .bold{font-weight:700;} .heavy{font-weight:900;font-size:18px;text-transform:uppercase;}
-        .divider{border-top:2px solid #000;margin:8px 0;}
-        .row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;}
-        .items-table{width:100%;border-collapse:collapse;margin:10px 0;}
-        .items-table td{padding:5px 0;font-size:16px;font-weight:900;vertical-align:top;}
-        .qty{font-size:20px;width:35px;text-align:center;border:2px solid #000;display:inline-block;margin-right:8px;}
-        .variant{font-size:10px;font-weight:700;display:block;margin-top:2px;}
-        @media print{@page{margin:0;size:58mm auto;} body{width:58mm;}}
-      </style></head><body>
-        ${kotRef.current.innerHTML}
-        <script>window.onload=function(){window.focus();window.print();};</script>
-      </body></html>
-    `;
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(content);
-    doc.close();
-  }, []);
+    if (!lastOrder) return;
+    printKOT({ kotRef });
+  }, [lastOrder]);
 
 
   // Hold Order Methods
@@ -632,16 +622,19 @@ export default function POS({ user }) {
               </tr>
             </thead>
             <tbody>
-              {(r.items || []).map((item, i) => (
+              {(r.items || []).map((item, i) => {
+                const is100g = item.variant_name && ['100g', '100gm', '100gms', '100gram', '100grams'].includes(item.variant_name.toLowerCase().replace(/\\s/g, ''));
+                const sizeDisplay = is100g ? (item.quantity === 1 ? '1 Cup' : `${item.quantity} Cups`) : item.variant_name;
+                return (
                 <tr key={i} style={{ verticalAlign: 'top' }}>
                   <td style={{ padding: '6px 0' }}>
                     <div style={{ fontWeight: '800', fontSize: '12px' }}>{item.product_name}</div>
-                    {item.variant_name && <div style={{ fontSize: '9px', color: '#555' }}>Size: {item.variant_name}</div>}
+                    {sizeDisplay && <div style={{ fontSize: '9px', color: '#555' }}>{is100g ? sizeDisplay : `Size: ${sizeDisplay}`}</div>}
                   </td>
-                  <td style={{ textAlign: 'center', padding: '6px 0', fontWeight: '700' }}>{item.quantity}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 0', fontWeight: '700' }}>{is100g ? `${item.quantity} - ${item.quantity === 1 ? 'Cup' : 'Cups'}` : item.variant_name ? `${item.quantity} - ${item.variant_name}` : item.quantity}</td>
                   <td style={{ textAlign: 'right', padding: '6px 0', fontWeight: '700' }}>{Number(item.item_subtotal).toFixed(2)}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
 
@@ -689,15 +682,19 @@ export default function POS({ user }) {
 
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
              <tbody>
-              {(lastOrder.cartSnapshot || []).map((item, i) => (
+              {(lastOrder.cartSnapshot || []).map((item, i) => {
+                const vName = item.variant?.name;
+                const is100g = vName && ['100g', '100gm', '100gms', '100gram', '100grams'].includes(vName.toLowerCase().replace(/\\s/g, ''));
+                const sizeDisplay = is100g ? (item.qty === 1 ? '1 Cup' : `${item.qty} Cups`) : vName;
+                return (
                 <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ fontSize: '24px', fontWeight: '900', padding: '10px 0', width: '50px' }}>{item.qty}x</td>
                   <td style={{ fontSize: '18px', fontWeight: '800', padding: '10px 0' }}>
                     {item.product.name}
-                    {item.variant && <div style={{ fontSize: '12px', fontWeight: '700', color: '#444' }}>[{item.variant.name}]</div>}
+                    {sizeDisplay && <div style={{ fontSize: '12px', fontWeight: '700', color: '#444' }}>[{sizeDisplay}]</div>}
                   </td>
                 </tr>
-              ))}
+              )})}
              </tbody>
           </table>
 
@@ -755,11 +752,29 @@ export default function POS({ user }) {
     if (!showCalculator) return null;
 
     const handleDigit = (digit) => {
-      setCalcValue(prev => {
-        if (digit === '.' && prev.includes('.')) return prev;
-        if (prev === '0' && digit !== '.') return digit;
-        return prev + digit;
-      });
+      const newVal = (() => {
+        if (digit === '.' && calcValue.includes('.')) return calcValue;
+        if (calcValue === '0' && digit !== '.') return digit;
+        return calcValue + digit;
+      })();
+      setCalcValue(newVal);
+
+      // Auto-sync the other mode's value
+      const numVal = parseFloat(newVal) || 0;
+      if (calcMode === 'qty') {
+        // User is entering grams — auto-calc amount from 1kg rate
+        const gramsEntered = numVal >= 10 && Number.isInteger(numVal) ? numVal : numVal * 1000;
+        const perGram = getPricePerGram(managerItem);
+        const autoPrice = (gramsEntered * perGram).toFixed(2);
+        setCalcPrice(autoPrice);
+      } else {
+        // User is entering price — back-calc grams from 1kg rate
+        const perGram = getPricePerGram(managerItem);
+        if (perGram > 0) {
+          const autoGrams = (numVal / perGram).toFixed(0);
+          setCalcQty(autoGrams);
+        }
+      }
     };
 
     const handleBackspace = () => {
@@ -772,6 +787,11 @@ export default function POS({ user }) {
       let finalQty = calcMode === 'qty' ? currentVal : calcQty;
       let finalPrice = calcMode === 'price' ? currentVal : calcPrice;
 
+      let newQty = managerItem.qty;
+      let newUnitInfo = managerItem.unitInfo;
+      let newManualPrice = null;
+      let newCustomPrice = false;
+
       // Apply QTY changes
       let q = parseFloat(finalQty);
       if (q > 0) {
@@ -780,22 +800,30 @@ export default function POS({ user }) {
         if (q >= 10 && Number.isInteger(q)) {
           q = q / 1000;
         }
-        applyVariation({ value: q });
+        newQty = q;
+        newUnitInfo = { value: q };
       }
       
       // Apply Price changes
       const a = parseFloat(finalPrice);
       if (a > 0 && q > 0) {
         // Derive the unit rate from the entered amount and quantity
-        const unitRate = (a / q).toFixed(2);
-        setManagerManualPrice(unitRate);
+        newManualPrice = (a / q).toFixed(2);
+        newCustomPrice = true;
       } else if (a > 0) {
         // Fallback for q=0 (shouldn't happen)
-        setManagerManualPrice(a);
-      } else {
-        setManagerManualPrice(null);
+        newManualPrice = a;
+        newCustomPrice = true;
       }
       
+      addToCartFromManager({
+        ...managerItem,
+        variant: null,
+        qty: newQty,
+        unitInfo: newUnitInfo,
+        manualPrice: newManualPrice,
+        customPrice: newCustomPrice
+      });
       setShowCalculator(false);
     };
 
@@ -874,7 +902,21 @@ export default function POS({ user }) {
                     {calcValue || '0'}
                   </span>
                </div>
+               {/* Auto-computed counterpart */}
+               <div className="flex items-center justify-end mt-3 gap-2">
+                 {calcMode === 'qty' && parseFloat(calcPrice) > 0 && (
+                   <span className="text-atul-pink_primary/80 text-[13px] font-black font-mono bg-white/10 px-3 py-1 rounded-lg">
+                     ≈ ₹{parseFloat(calcPrice).toFixed(0)}
+                   </span>
+                 )}
+                 {calcMode === 'price' && parseFloat(calcQty) > 0 && (
+                   <span className="text-atul-pink_primary/80 text-[13px] font-black font-mono bg-white/10 px-3 py-1 rounded-lg">
+                     ≈ {calcQty}g
+                   </span>
+                 )}
+               </div>
             </div>
+
 
             {/* Keypad Grid */}
             <div className="grid grid-cols-3 gap-3 mb-8">
@@ -956,7 +998,7 @@ export default function POS({ user }) {
                         <div className={cn("size-3 rounded-full shadow-lg", item.product.is_veg ? "bg-emerald-500" : "bg-red-500")} />
                         <div>
                           <div className="text-atul-charcoal text-[19px] font-black tracking-tight">{item.product.name}</div>
-                          {item.variant && <div className="text-[11px] text-atul-pink_primary font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1"><Check size={12}/> {item.variant.name}</div>}
+                          {item.variant && <div className="text-[11px] text-atul-pink_primary font-black uppercase tracking-[0.2em] mt-1.5 flex items-center gap-1"><Check size={12}/> {format100g(item.variant.name, item.qty)}</div>}
                         </div>
                       </div>
                       <div className="flex items-center justify-center gap-5">
@@ -1037,9 +1079,11 @@ export default function POS({ user }) {
     if (!isPhoneModalOpen) return null;
 
     const handleDigit = (digit) => {
+      if (digit === '.') return;
       setCustomerPhone(prev => {
-        if (prev.length >= 10) return prev;
-        return prev + digit;
+        const current = (prev || '').replace(/\D/g, '');
+        if (current.length >= 10) return current;
+        return current + digit;
       });
     };
 
@@ -1091,11 +1135,14 @@ export default function POS({ user }) {
             </div>
 
             <div className="grid grid-cols-3 gap-3 mb-8">
-               {[1,2,3,4,5,6,7,8,9,'.',0].map(n => (
+               {[1,2,3,4,5,6,7,8,9,0].map(n => (
                  <button 
                    key={n}
                    onClick={() => handleDigit(n.toString())}
-                   className="h-16 rounded-[2.2rem] bg-white border border-gray-100/50 text-xl font-black text-atul-charcoal hover:bg-atul-cream/50 active:scale-95 transition-all shadow-sm flex items-center justify-center"
+                   className={cn(
+                     "h-16 rounded-[2.2rem] bg-white border border-gray-100/50 text-xl font-black text-atul-charcoal hover:bg-atul-cream/50 active:scale-95 transition-all shadow-sm flex items-center justify-center",
+                     n === 0 && "col-span-1"
+                   )}
                  >
                    {n}
                  </button>
@@ -1332,7 +1379,7 @@ export default function POS({ user }) {
                                <div className="flex flex-wrap gap-1 mt-1.5 pl-3">
                                  {item.variant && (
                                    <span className="text-[8px] px-1.5 py-0.5 bg-atul-pink_primary/8 text-atul-pink_primary rounded-md font-black uppercase tracking-wide border border-atul-pink_soft/50">
-                                     {item.variant.name}
+                                     {format100g(item.variant.name, item.qty)}
                                    </span>
                                  )}
                                  {/* Custom weight badge - Unify with variant display */}
@@ -1459,7 +1506,7 @@ export default function POS({ user }) {
             
             {/* 2. Cash Button */}
             <button 
-               onClick={() => { setPaymentMode('Cash'); handlePlaceOrder(); }}
+               onClick={() => handlePlaceOrder('Cash')}
                disabled={cart.length === 0 || isSubmitting}
                className="h-16 flex flex-col items-center justify-center bg-[#E7F7EF] text-[#2D9B63] rounded-2xl hover:bg-[#D4F0E2] transition-all active:scale-95 shadow-sm shadow-[#2D9B63]/10 disabled:opacity-30"
             >
@@ -1467,14 +1514,14 @@ export default function POS({ user }) {
                <span className="text-[9px] font-black mt-1 uppercase tracking-widest">Cash</span>
             </button>
 
-            {/* 3. QR Button */}
+            {/* 3. UPI Button */}
             <button 
-               onClick={() => { setPaymentMode('UPI'); setShowQRModal(true); }}
+               onClick={() => { setPaymentMode('UPI'); setShowQRModal(true); handlePlaceOrder('UPI'); }}
                disabled={cart.length === 0 || isSubmitting}
                className="h-16 flex flex-col items-center justify-center bg-[#F3E8FF] text-[#7C3AED] rounded-2xl hover:bg-[#EBD5FF] transition-all active:scale-95 shadow-sm shadow-[#7C3AED]/10 disabled:opacity-30"
             >
                <QrCode size={20} />
-               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">QR CODE</span>
+               <span className="text-[9px] font-black mt-1 uppercase tracking-widest">UPI</span>
             </button>
           </div>
         </div>
@@ -1795,13 +1842,33 @@ export default function POS({ user }) {
 
                   <div className="flex gap-10 items-center flex-1">
                     <div className="shrink-0 flex flex-col min-w-[150px]">
-                      <h4 className="text-[20px] font-extrabold text-atul-charcoal leading-none tracking-tight truncate">
-                        {managerItem?.product?.name || '--'}
-                      </h4>
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-[20px] font-extrabold text-atul-charcoal leading-none tracking-tight truncate">
+                          {managerItem?.product?.name || '--'}
+                        </h4>
+                        {managerItem?.product && (
+                          <div className={cn(
+                            "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white shadow-sm",
+                            (() => {
+                              const key = managerItem.variant ? `${managerItem.product.id}_${managerItem.variant.id}` : `${managerItem.product.id}`;
+                              const info = stockMap[key] || stockMap[managerItem.product.id]; // fallback to product stock
+                              return parseFloat(info?.quantity || 0) > 0 ? "bg-emerald-50 text-emerald-500" : "bg-red-50 text-red-500";
+                            })()
+                          )}>
+                             Available Stock: {(() => {
+                               const key = managerItem.variant ? `${managerItem.product.id}_${managerItem.variant.id}` : `${managerItem.product.id}`;
+                               const info = stockMap[key] || stockMap[managerItem.product.id];
+                               const qty = info?.quantity || 0;
+                               const unit = managerItem.product?.is_packaged_good ? 'KG' : 'KG'; // User requested KG instead of PCS
+                               return `${qty} ${unit}`;
+                             })()}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-2">
                         {managerItem?.variant && (
                           <span className="text-[10px] font-black text-atul-pink_primary uppercase tracking-widest bg-white px-2 py-0.5 rounded-lg border border-atul-pink_soft/30">
-                            {managerItem.variant.name}
+                            {format100g(managerItem.variant.name, managerItem.qty)}
                           </span>
                         )}
                         <span className="text-[12px] font-black text-atul-pink_primary font-mono mt-1">
@@ -1829,7 +1896,7 @@ export default function POS({ user }) {
                            managerItem.product.variants.map(v => (
                              <button 
                                key={v.id}
-                               onClick={() => setManagerItem(prev => ({ ...prev, variant: v, qty: 1 }))}
+                               onClick={() => addToCartFromManager({ ...managerItem, variant: v, qty: 1 })}
                                className={cn(
                                  "min-w-[80px] h-[56px] px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap",
                                  managerItem.variant?.id === v.id
@@ -1837,7 +1904,7 @@ export default function POS({ user }) {
                                    : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
                                )}
                              >
-                               <span className="leading-none text-[13px]">{v.name}</span>
+                               <span className="leading-none text-[13px]">{format100g(v.name, 1)}</span>
                                <span className={cn("font-bold text-[11px] mt-0.5 transition-all", managerItem.variant?.id === v.id ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
                                  ₹{(Number(managerItem.product.display_price || managerItem.product.base_price) + Number(v.current_price || v.price_delta)).toFixed(0)}
                                </span>
@@ -1852,13 +1919,13 @@ export default function POS({ user }) {
                                  if (isCalculatorRequired) {
                                    handleCustomPricing(v);
                                  } else {
-                                   setManagerItem(prev => ({ 
-                                     ...prev, 
+                                   addToCartFromManager({ 
+                                     ...managerItem, 
                                      variant: null, 
                                      qty: v.value, 
                                      unitInfo: v,
                                      customPrice: null 
-                                   }));
+                                   });
                                  }
                                }}
                                className={cn(
@@ -1868,7 +1935,7 @@ export default function POS({ user }) {
                                    : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
                                )}
                              >
-                               <span className="leading-none text-[13px]">{v.label}</span>
+                               <span className="leading-none text-[13px]">{format100g(v.label, 1)}</span>
                                <span className={cn("font-bold text-[11px] mt-0.5 transition-all", (managerItem.unitInfo?.label === v.label && !managerItem.customPrice) ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
                                  ₹{calculateItemPrice({ ...managerItem, qty: v.value, unitInfo: v }).toFixed(0)}
                                </span>
@@ -1904,18 +1971,7 @@ export default function POS({ user }) {
                      <button onClick={() => setManagerItem(null)} className="size-14 bg-white border-2 border-gray-50 rounded-[1.5rem] flex items-center justify-center text-atul-gray-300 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer">
                         <X size={24}/>
                      </button>
-                     <button 
-                       onClick={() => managerItem && addToCartFromManager()}
-                       disabled={!managerItem}
-                       className={cn(
-                         "h-14 px-10 rounded-[1.5rem] font-black text-sm uppercase flex items-center gap-3 transition-all",
-                         managerItem
-                           ? "bg-atul-pink_primary text-white shadow-[0_15px_35px_rgba(214,51,132,0.3)] hover:bg-atul-pink_deep active:scale-95"
-                           : "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
-                       )}
-                     >
-                       <Plus size={20} strokeWidth={3}/> ADD TO BILL
-                     </button>
+
                   </div>
                 </motion.div>
               </div>

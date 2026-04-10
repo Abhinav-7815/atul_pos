@@ -46,24 +46,14 @@ class Order(BaseModel):
     def generate_order_number(self):
         today = timezone.now().strftime('%Y%m%d')
         prefix = f"ORD-{today}"
-        
-        # Count orders for this outlet today
+
         with transaction.atomic():
-            queryset = Order.all_objects.filter(
-                outlet=self.outlet, 
+            last_order = Order.objects.filter(
+                outlet=self.outlet,
                 order_number__startswith=prefix
-            ).order_by('order_number')
-            
-            # select_for_update() is not supported in SQLite and causes 500 errors.
-            # SQLite handles database-level locking for writes, so this logic is still relatively safe for low concurrency.
-            last_order = queryset.last()
-            
-            if last_order:
-                last_seq = int(last_order.order_number.split('-')[-1])
-                new_seq = last_seq + 1
-            else:
-                new_seq = 1
-            
+            ).order_by('order_number').last()
+
+            new_seq = (int(last_order.order_number.split('-')[-1]) + 1) if last_order else 1
             return f"{prefix}-{str(new_seq).zfill(4)}"
 
     def generate_token_number(self):
@@ -85,12 +75,124 @@ class Order(BaseModel):
         self.total_amount = (self.subtotal + self.tax_amount) - self.discount_amount
         self.save()
 
+    def deduct_inventory(self):
+        """Reduces stock levels for all items in the order."""
+        from apps.inventory.models import StockItem, InventoryTransaction
+        import re
+
+        with transaction.atomic():
+            for item in self.items.all():
+                # 1. Try to find variant-specific stock
+                stock = StockItem.objects.filter(
+                    product=item.product,
+                    variant=item.variant,
+                    outlet=self.outlet
+                ).first()
+
+                # 2. Fallback to product bulk stock
+                if not stock and item.variant:
+                    stock = StockItem.objects.filter(
+                        product=item.product,
+                        variant=None,
+                        outlet=self.outlet
+                    ).first()
+
+                if stock:
+                    # Idempotency check: Ensure this specific item in this specific order hasn't been deducted yet
+                    item_ref = f"Item:{item.id}"
+                    if InventoryTransaction.objects.filter(
+                        stock_item=stock,
+                        transaction_type='sale',
+                        reference_id=self.order_number,
+                        notes__contains=item_ref
+                    ).exists():
+                        continue
+
+                    qty_to_deduct = item.quantity
+                    
+                    # Heuristic for variant conversion (e.g. 500gm -> 0.5kg)
+                    # This assumes the base stock quantity is kept in KG
+                    if stock.variant is None and item.variant:
+                        v_name = item.variant.name.lower()
+                        match = re.search(r'(\d+)\s*(gm|g\b)', v_name)
+                        if match:
+                            grams = float(match.group(1))
+                            qty_to_deduct = Decimal(str(grams / 1000.0)) * item.quantity
+                        elif '1kg' in v_name or '1 kg' in v_name or '1000g' in v_name:
+                            qty_to_deduct = Decimal('1.00') * item.quantity
+
+                    stock.quantity -= qty_to_deduct
+                    stock.save()
+
+                    InventoryTransaction.objects.create(
+                        stock_item=stock,
+                        transaction_type='sale',
+                        quantity=qty_to_deduct,
+                        reference_id=self.order_number,
+                        notes=f"Order {self.order_number} auto-deduction [{item_ref}]"
+                    )
+
+    def restore_inventory(self):
+        """Restores stock levels (used for voided/cancelled orders)."""
+        from apps.inventory.models import StockItem, InventoryTransaction
+        import re
+
+        with transaction.atomic():
+            for item in self.items.all():
+                # Logic is reverse of deduct_inventory
+                stock = StockItem.objects.filter(product=item.product, variant=item.variant, outlet=self.outlet).first()
+                if not stock and item.variant:
+                    stock = StockItem.objects.filter(product=item.product, variant=None, outlet=self.outlet).first()
+                
+                if stock:
+                    qty_to_restore = item.quantity
+                    if stock.variant is None and item.variant:
+                        v_name = item.variant.name.lower()
+                        match = re.search(r'(\d+)\s*(gm|g\b)', v_name)
+                        if match:
+                            grams = float(match.group(1))
+                            qty_to_restore = Decimal(str(grams / 1000.0)) * item.quantity
+                        elif '1kg' in v_name or '1 kg' in v_name or '1000g' in v_name:
+                            qty_to_restore = Decimal('1.00') * item.quantity
+
+                    stock.quantity += qty_to_restore
+                    stock.save()
+
+                    InventoryTransaction.objects.create(
+                        stock_item=stock,
+                        transaction_type='adjustment',
+                        quantity=qty_to_restore,
+                        reference_id=self.order_number,
+                        notes=f"Order {self.order_number} void/cancel restoration"
+                    )
+
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            try:
+                old_info = Order.objects.get(pk=self.pk)
+                old_status = old_info.status
+            except Order.DoesNotExist:
+                pass
+
         if not self.order_number:
             self.order_number = self.generate_order_number()
         if not self.token_number and self.order_type == OrderType.TAKEAWAY:
             self.token_number = self.generate_token_number()
+        
         super().save(*args, **kwargs)
+
+        # Inventory logic upon status change
+        if not is_new and old_status != self.status:
+            # 1. Deduct when moving out of DRAFT to active status
+            if self.status in [OrderStatus.CONFIRMED, OrderStatus.SERVED] and old_status == OrderStatus.DRAFT:
+                self.deduct_inventory()
+            
+            # 2. Restore when moving to VOIDED/CANCELLED from an active status
+            elif self.status in [OrderStatus.VOIDED, OrderStatus.CANCELLED]:
+                if old_status in [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED]:
+                    self.restore_inventory()
 
 class ItemStatus(models.TextChoices):
     PENDING = 'pending', 'Pending'
@@ -139,10 +241,12 @@ class OrderItem(models.Model):
             else:
                 self.tax_rate = Decimal('5.00')
 
-        self.item_subtotal = self.unit_price * self.quantity
-        # Tax calculation
-        self.item_tax = (self.item_subtotal * self.tax_rate) / Decimal('100.00')
-        self.item_total = self.item_subtotal + self.item_tax
+        self.item_total = self.unit_price * self.quantity
+        # Inclusive Tax: price already includes GST
+        # tax = total - (total / (1 + rate/100))
+        rate = self.tax_rate / Decimal('100.00')
+        self.item_tax = (self.item_total - (self.item_total / (1 + rate))).quantize(Decimal('0.01'))
+        self.item_subtotal = self.item_total - self.item_tax
         
         super().save(*args, **kwargs)
         # Trigger order total recalculation

@@ -140,6 +140,42 @@ class OrderViewSet(viewsets.ModelViewSet):
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        """Delete all orders (requires manager password)"""
+        from apps.accounts.models import User, UserRole
+        from django.contrib.auth import authenticate
+        password = request.data.get('password') or request.data.get('pin')
+
+        if not password:
+            return Response({"error": "Password required for bulk delete."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Authenticate using the requesting user's own credentials
+        authorizer = authenticate(username=request.user.email, password=password)
+
+        if not authorizer:
+            return Response({"error": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER]
+        if authorizer.role not in authorized_roles:
+            return Response({"error": "Unauthorized role."}, status=status.HTTP_403_FORBIDDEN)
+
+        # To be safe, filter by outlet if not superadmin
+        qs = Order.objects.all()
+        if authorizer.role != UserRole.SUPERADMIN:
+            qs = qs.filter(outlet_id=authorizer.outlet_id)
+
+        count = qs.count()
+        qs.delete()
+
+        record_audit(
+            user=request.user,
+            action="ORDERS_BULK_DELETE",
+            description=f"Bulk deleted {count} orders authorized by {authorizer.full_name}."
+        )
+
+        return Response({"message": f"Successfully deleted {count} orders."}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'])
     def void(self, request, pk=None):
         """Void an order (requires manager PIN)"""
@@ -166,8 +202,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not authorizer:
             return Response({"error": "Invalid Manager PIN or Unauthorized role."}, status=status.HTTP_401_UNAUTHORIZED)
         
-        authorizer_name = authorizer.get_full_name() or authorizer.username
-            
         if order.status == OrderStatus.VOIDED:
             return Response({"error": "Order is already voided."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -186,6 +220,57 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['post'], url_path='delete_order')
+    def delete_order(self, request, pk=None):
+        """Hard delete an order and renumber all subsequent orders of the same day."""
+        from apps.accounts.models import User, UserRole
+        from django.db import transaction as db_transaction
+        order = self.get_object_or_404(Order, pk=pk)
+        manager_pin = request.data.get('pin') or request.data.get('manager_pin')
+
+        if not manager_pin:
+            return Response({"error": "Manager PIN required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        from django.contrib.auth import authenticate as dj_auth
+        authorizer = dj_auth(username=request.user.email, password=manager_pin)
+        if not authorizer:
+            return Response({"error": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER]
+        if authorizer.role not in authorized_roles:
+            return Response({"error": "Unauthorized role."}, status=status.HTTP_403_FORBIDDEN)
+
+        order_number = order.order_number
+        outlet_id = order.outlet_id  # save before delete
+        # Parse date prefix and sequence from order number e.g. ORD-20260407-0002
+        parts = order_number.split('-')  # ['ORD', '20260407', '0002']
+        prefix = f"{parts[0]}-{parts[1]}"  # ORD-20260407
+        deleted_seq = int(parts[2])
+
+        with db_transaction.atomic():
+            # Hard delete the order first
+            order.hard_delete()
+
+            # Get all orders of same day with seq > deleted, ordered ascending
+            later_orders = Order.objects.filter(
+                outlet_id=outlet_id,
+                order_number__startswith=prefix,
+            ).order_by('order_number')
+
+            # Renumber each: shift seq down by 1
+            for o in later_orders:
+                seq = int(o.order_number.split('-')[-1])
+                if seq > deleted_seq:
+                    new_number = f"{prefix}-{str(seq - 1).zfill(4)}"
+                    Order.objects.filter(pk=o.pk).update(order_number=new_number)
+
+        record_audit(
+            user=request.user,
+            action="ORDER_DELETE",
+            description=f"Order {order_number} deleted by {authorizer.full_name}. Subsequent orders renumbered."
+        )
+        return Response({"message": f"Order {order_number} deleted and orders renumbered."}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'])
     def receipt(self, request, pk=None):

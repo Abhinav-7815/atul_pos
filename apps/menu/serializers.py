@@ -17,10 +17,11 @@ class ProductVariantSerializer(serializers.ModelSerializer):
     is_available = serializers.SerializerMethodField()
     # Read-only field for outlet-specific price (overrides)
     current_price = serializers.SerializerMethodField()
+    available_stock = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductVariant
-        fields = ['id', 'name', 'price_delta', 'is_default', 'is_available', 'current_price']
+        fields = ['id', 'name', 'price_delta', 'is_default', 'is_available', 'current_price', 'available_stock']
 
     def get_is_available(self, obj):
         outlet = self.context.get('outlet')
@@ -34,12 +35,20 @@ class ProductVariantSerializer(serializers.ModelSerializer):
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.price_override if (status and status.price_override is not None) else obj.price_delta
 
+    def get_available_stock(self, obj):
+        outlet = self.context.get('outlet')
+        if not outlet: return 0
+        from apps.inventory.models import StockItem
+        stock = StockItem.objects.filter(product=obj.product, variant=obj, outlet=outlet).first()
+        return float(stock.quantity) if stock else 0.0
+
 class ProductSerializer(serializers.ModelSerializer):
     variants = ProductVariantSerializer(many=True, required=False)
     modifier_groups = ModifierGroupSerializer(many=True, read_only=True)
     category_name = serializers.SerializerMethodField()
     is_available = serializers.SerializerMethodField()
     display_price = serializers.SerializerMethodField()
+    available_stock = serializers.SerializerMethodField()
 
     def get_category_name(self, obj):
         """Return category name or 'Uncategorized' if category is null"""
@@ -51,7 +60,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id', 'category', 'category_name', 'outlet', 'name', 'description', 
             'base_price', 'display_price', 'tax_rate', 'hsn_code', 'is_veg', 'is_available', 
             'image_url', 'display_order', 'prep_time_minutes', 'allergen_tags', 
-            'is_packaged_good', 'variants', 'modifier_groups'
+            'is_packaged_good', 'variants', 'modifier_groups', 'available_stock'
         ]
         read_only_fields = ['id']
 
@@ -66,6 +75,13 @@ class ProductSerializer(serializers.ModelSerializer):
         if not outlet: return obj.base_price
         status = obj.outlet_statuses.filter(outlet=outlet).first()
         return status.price_override if (status and status.price_override is not None) else obj.base_price
+
+    def get_available_stock(self, obj):
+        outlet = self.context.get('outlet')
+        if not outlet: return 0
+        from apps.inventory.models import StockItem
+        stock = StockItem.objects.filter(product=obj, outlet=outlet).first()
+        return float(stock.quantity) if stock else 0.0
 
     def create(self, validated_data):
         variants_data = validated_data.pop('variants', [])

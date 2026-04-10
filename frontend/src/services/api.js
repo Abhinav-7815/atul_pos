@@ -10,12 +10,74 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
   // Skip adding token for auth routes to avoid validation errors on stale tokens
   const skipAuth = config.url.includes('/auth/login/') || config.url.includes('/auth/refresh/');
-  
+
   if (token && !skipAuth) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+// Auto-refresh JWT token on 401 responses
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error);
+    else resolve(token);
+  });
+  failedQueue = [];
+};
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refresh = localStorage.getItem('refresh_token');
+      if (!refresh) {
+        isRefreshing = false;
+        // No refresh token — redirect to login
+        localStorage.removeItem('access_token');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      try {
+        const res = await axios.post('/api/v1/auth/refresh/', { refresh });
+        const newAccess = res.data.access;
+        localStorage.setItem('access_token', newAccess);
+        api.defaults.headers.common.Authorization = `Bearer ${newAccess}`;
+        processQueue(null, newAccess);
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export const authApi = {
   login: (credentials) => api.post('/auth/login/', credentials),
@@ -42,46 +104,28 @@ const setCached = (key, data) => {
 
 export const menuApi = {
   getCategories: async (force = false) => {
-    const cached = getCached(CACHE_KEYS.CATEGORIES);
-    
-    // Background fetch to update cache for next time
-    const fetchFresh = async () => {
-      try {
-        const res = await api.get('/menu/categories/');
-        setCached(CACHE_KEYS.CATEGORIES, res.data);
-        return res;
-      } catch (e) { return null; }
-    };
-
-    if (!force && cached) {
-      fetchFresh(); // Silently update in background
-      return { data: cached, fromCache: true };
-    }
-    
-    const fresh = await fetchFresh();
-    return fresh || { data: [] };
+    const cached = !force && getCached(CACHE_KEYS.CATEGORIES);
+    if (cached) return { data: cached, fromCache: true };
+    try {
+      const res = await api.get('/menu/categories/');
+      setCached(CACHE_KEYS.CATEGORIES, res.data);
+      return res;
+    } catch (e) { return { data: getCached(CACHE_KEYS.CATEGORIES) || [] }; }
   },
 
   getProducts: async (params, force = false) => {
-    // We cache the main list (limit 1000)
-    const isMainList = params?.limit === 1000;
-    const cached = isMainList ? getCached(CACHE_KEYS.PRODUCTS) : null;
-
-    const fetchFresh = async () => {
-      try {
-        const res = await api.get('/menu/products/', { params });
-        if (isMainList) setCached(CACHE_KEYS.PRODUCTS, res.data);
-        return res;
-      } catch (e) { return null; }
-    };
-
-    if (!force && isMainList && cached) {
-      fetchFresh(); // Silently update
-      return { data: cached, fromCache: true };
+    // If no category filter, cache all products globally
+    const cacheKey = params?.category ? null : CACHE_KEYS.PRODUCTS;
+    const cached = cacheKey && !force && getCached(cacheKey);
+    if (cached) return { data: cached, fromCache: true };
+    try {
+      const res = await api.get('/menu/products/', { params });
+      if (cacheKey) setCached(cacheKey, res.data);
+      return res;
+    } catch (e) {
+      const fallback = cacheKey ? getCached(cacheKey) : null;
+      return { data: fallback || [] };
     }
-    
-    const fresh = await fetchFresh();
-    return fresh || { data: [] };
   },
 
   createCategory: async (data) => {
@@ -135,6 +179,8 @@ export const orderApi = {
   confirmOrder: (orderId) => api.post(`/orders/${orderId}/confirm/`),
   recordPayment: (orderId, data) => api.post(`/orders/${orderId}/payment/`, data),
   getOrders: (params) => api.get('/orders/', { params }),
+  bulkDeleteOrders: (data) => api.post('/orders/bulk-delete/', data),
+  deleteOrder: (orderId, data) => api.post(`/orders/${orderId}/delete_order/`, data),
   voidOrder: (orderId, data) => api.post(`/orders/${orderId}/void/`, data),
   getReceipt: (orderId) => api.get(`/orders/${orderId}/receipt/`),
 };

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atul_pos_backend
+    environment:
+      - DATABASE_URL=sqlite:///db.sqlite3
+      - SECRET_KEY=atul_secret_123
+      - DEBUG=False
+    volumes:
+      - ./db.sqlite3:/app/db.sqlite3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.atul-pos-backend.entrypoints=websecure"
+      - "traefik.http.routers.atul-pos-backend.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.atul-pos-backend.tls=true"
+      - "traefik.http.routers.atul-pos-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.atul-pos-backend.loadbalancer.server.port=8000"
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: atul_pos_frontend
+    depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.atul-pos-frontend.entrypoints=websecure"
+      - "traefik.http.routers.atul-pos-frontend.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/pos/`)"
+      - "traefik.http.routers.atul-pos-frontend.tls=true"
+      - "traefik.http.routers.atul-pos-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.atul-pos-frontend.loadbalancer.server.port=80"
+    restart: always

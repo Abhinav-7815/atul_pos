@@ -1,4 +1,5 @@
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
 from .models import User
 from .serializers import UserSerializer
 
@@ -17,3 +18,12 @@ class UserViewSet(viewsets.ModelViewSet):
         if role:
             qs = qs.filter(role=role)
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Prevent deleting yourself or a superadmin
+        if instance.id == request.user.id:
+            return Response({'error': 'Cannot delete your own account.'}, status=status.HTTP_400_BAD_REQUEST)
+        if instance.role == 'superadmin':
+            return Response({'error': 'Cannot delete a superadmin account.'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)

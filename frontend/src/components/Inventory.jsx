@@ -14,7 +14,7 @@ const formatStock = (qty) => {
 function Numpad({ value, onChange }) {
   const press = (key) => {
     if (key === 'back') {
-      onChange(value.length <= 1 ? '0' : value.slice(0, -1));
+      onChange('0');
     } else if (key === 'clear') {
       onChange('0');
     } else if (key === '.') {
@@ -61,7 +61,11 @@ export default function Inventory({ user }) {
   const [products, setProducts]       = useState([]);
   const [stockMap, setStockMap]       = useState({});
   const [loading, setLoading]         = useState(true);
-  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeCategory, setActiveCategory] = useState(() => localStorage.getItem('atul_pos_inventory_active_cat') || 'all');
+
+  useEffect(() => {
+    localStorage.setItem('atul_pos_inventory_active_cat', activeCategory);
+  }, [activeCategory]);
   const [search, setSearch]           = useState('');
 
   const [editItem, setEditItem]       = useState(null);
@@ -138,20 +142,57 @@ export default function Inventory({ user }) {
     return matchSearch && matchCat;
   }), [products, search, activeCategory]);
 
-  const grouped = useMemo(() => {
-    const map = {};
-    filtered.forEach(p => {
-      const catId   = p.category?.id ?? p.category ?? 'uncategorized';
-      const catName = p.category_name
-        || categories.find(c => String(c.id) === String(catId))?.name
-        || 'Uncategorized';
-      if (!map[catId]) map[catId] = { name: catName, items: [] };
-      map[catId].items.push(p);
+  const sortedList = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      // 1. Stock Status
+      const getStatusScore = (item) => {
+        const stock = stockMap[item.id];
+        const qty = Number(stock?.quantity) || 0;
+        const threshold = Number(stock?.min_threshold) || 5;
+        if (qty <= 0) return 2; // Out of stock (highest priority)
+        if (qty <= threshold) return 1; // Low stock
+        return 0; // Normal
+      };
+
+      const scoreA = getStatusScore(a);
+      const scoreB = getStatusScore(b);
+
+      if (scoreA !== scoreB) {
+        return scoreB - scoreA; // Descending score (2 comes first, then 1, then 0)
+      }
+
+      // 2. Alphabetical by name
+      return a.name.localeCompare(b.name);
     });
-    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered, categories]);
+  }, [filtered, stockMap]);
 
   // ── Save ─────────────────────────────────────────────────────────────────
+  const handleInlineSave = async (p, newQty) => {
+    const qty = parseFloat(newQty);
+    if (isNaN(qty) || qty < 0) return;
+
+    const existing = stockMap[p.id];
+    const currentQty = existing ? Number(existing.quantity || 0) : 0;
+    
+    if (qty === currentQty) return;
+
+    const threshold = existing ? Number(existing.min_threshold) : 5;
+
+    try {
+      await inventoryApi.setQuantity({
+        product_id: p.id,
+        outlet: user?.outlet,
+        quantity: qty,
+        min_threshold: threshold,
+      });
+      await loadStocks();
+      showToast(`${p.name} stock updated`);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save. Please try again.', false);
+    }
+  };
+
   const handleSave = async () => {
     if (!editItem) return;
     const qty = parseFloat(editQty);
@@ -232,61 +273,82 @@ export default function Inventory({ user }) {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Table */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-7 pb-8">
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pt-2">
-            {Array.from({ length: 18 }).map((_, i) => <div key={i} className="h-[120px] bg-white/50 rounded-[2rem] animate-pulse" />)}
+          <div className="space-y-3 pt-2">
+            {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-white/50 rounded-2xl animate-pulse" />)}
           </div>
-        ) : grouped.length === 0 ? (
+        ) : sortedList.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 opacity-20">
             <Package size={48} />
             <p className="font-bold text-lg uppercase tracking-widest" style={{ fontFamily: '"Outfit", sans-serif' }}>No items found</p>
           </div>
-        ) : grouped.map(group => (
-          <div key={group.name} className="mb-10 last:mb-0">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-atul-pink_primary/60" style={{ fontFamily: '"Outfit", sans-serif' }}>{group.name}</span>
-              <div className="flex-1 h-px bg-atul-pink_primary/10" />
-              <span className="text-[10px] font-bold text-atul-charcoal/20 tabular-nums">{group.items.length} Items</span>
-            </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="py-4 px-6 text-[10px] uppercase tracking-widest font-black text-atul-charcoal/40" style={{ fontFamily: '"Outfit", sans-serif' }}>Product Name</th>
+                  <th className="py-4 px-6 text-[10px] uppercase tracking-widest font-black text-atul-charcoal/40" style={{ fontFamily: '"Outfit", sans-serif' }}>Category</th>
+                  <th className="py-4 px-6 text-[10px] uppercase tracking-widest font-black text-atul-charcoal/40" style={{ fontFamily: '"Outfit", sans-serif' }}>Status</th>
+                  <th className="py-4 px-6 text-[10px] uppercase tracking-widest font-black text-atul-charcoal/40 text-right" style={{ fontFamily: '"Outfit", sans-serif' }}>Current Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedList.map((p, idx) => {
+                  const stock = stockMap[p.id];
+                  const qty   = Number(stock?.quantity) || 0;
+                  const threshold = Number(stock?.min_threshold) || 5;
+                  const isOut = qty <= 0;
+                  const isLow = !isOut && qty <= threshold;
+                  
+                  const catId   = p.category?.id ?? p.category ?? 'uncategorized';
+                  const catName = p.category_name
+                    || categories.find(c => String(c.id) === String(catId))?.name
+                    || 'Uncategorized';
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
-              {group.items.map(p => {
-                const stock = stockMap[p.id];
-                const qty   = Number(stock?.quantity) || 0;
-                const threshold = Number(stock?.min_threshold) || 5;
-                const isOut = qty <= 0;
-                const isLow = !isOut && qty <= threshold;
-
-                return (
-                  <motion.div key={p.id} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                    className={`bg-white border rounded-[2rem] p-4 flex flex-col justify-between shadow-sm hover:shadow-xl transition-all duration-300 group ${isLow ? 'border-orange-200 bg-orange-50/10' : isOut ? 'border-red-200 bg-red-50/10' : 'border-gray-50'}`}>
-                    <div className="flex justify-between items-start gap-2 mb-2">
-                       <p className="text-[13px] font-bold text-atul-charcoal leading-tight line-clamp-3" style={{ fontFamily: '"Inter", sans-serif' }}>
-                         {p.name.split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ')}
-                       </p>
-                       {isLow && <span className="shrink-0 px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[8px] font-black uppercase rounded-md tracking-tighter" style={{ fontFamily: '"Outfit", sans-serif' }}>Low</span>}
-                       {isOut && <span className="shrink-0 px-1.5 py-0.5 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded-md tracking-tighter" style={{ fontFamily: '"Outfit", sans-serif' }}>Out</span>}
-                    </div>
-                    <div>
-                      <p className={`text-xl font-black mt-auto tabular-nums tracking-tighter ${isOut ? 'text-red-500' : isLow ? 'text-orange-500' : 'text-emerald-500'}`} style={{ fontFamily: '"Outfit", sans-serif' }}>
-                        {formatStock(qty)}
-                      </p>
-                      <button
-                        onClick={() => openEdit(p)}
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 bg-gray-50 hover:bg-atul-pink_primary hover:text-white border border-gray-100 transition-all rounded-xl text-[10px] font-black uppercase tracking-widest text-atul-charcoal/40 active:scale-95 shadow-sm group-hover:border-transparent"
-                        style={{ fontFamily: '"Outfit", sans-serif' }}
-                      >
-                        <Edit2 size={12} strokeWidth={3} /> STOCK
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
+                  return (
+                    <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${isLow ? 'bg-orange-50/20' : isOut ? 'bg-red-50/20' : ''}`}>
+                      <td className="py-4 px-6">
+                        <p className="text-[13px] font-bold text-atul-charcoal leading-tight" style={{ fontFamily: '"Inter", sans-serif' }}>
+                          {p.name.split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ')}
+                        </p>
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-atul-pink_primary/50" style={{ fontFamily: '"Outfit", sans-serif' }}>{catName}</span>
+                      </td>
+                      <td className="py-4 px-6">
+                        {isOut ? (
+                          <span className="px-2 py-1 bg-red-100 text-red-600 text-[9px] font-black uppercase rounded-md tracking-widest" style={{ fontFamily: '"Outfit", sans-serif' }}>Out of Stock</span>
+                        ) : isLow ? (
+                          <span className="px-2 py-1 bg-orange-100 text-orange-600 text-[9px] font-black uppercase rounded-md tracking-widest" style={{ fontFamily: '"Outfit", sans-serif' }}>Low Stock</span>
+                        ) : (
+                          <span className="px-2 py-1 bg-emerald-100 text-emerald-600 text-[9px] font-black uppercase rounded-md tracking-widest" style={{ fontFamily: '"Outfit", sans-serif' }}>In Stock</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center justify-end gap-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            defaultValue={qty}
+                            onBlur={(e) => handleInlineSave(p, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                            className={`w-28 px-3 py-2 text-right text-base font-black tabular-nums border rounded-xl outline-none transition-all shadow-sm ${isOut ? 'text-red-600 border-red-200 bg-red-50 focus:border-red-400 focus:ring-4 focus:ring-red-100' : isLow ? 'text-orange-600 border-orange-200 bg-orange-50 focus:border-orange-400 focus:ring-4 focus:ring-orange-100' : 'text-emerald-600 border-emerald-100 hover:border-emerald-200 bg-emerald-50 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100'}`}
+                            style={{ fontFamily: '"Outfit", sans-serif' }}
+                          />
+                          <span className="text-[10px] font-black text-atul-charcoal/40 uppercase tracking-widest">kg</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        ))}
+        )}
       </div>
 
       {/* ── Edit Modal ── */}

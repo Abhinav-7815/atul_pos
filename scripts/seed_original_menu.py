@@ -3,7 +3,7 @@ import django
 import sys
 
 # Add the project root to sys.path
-sys.path.append('c:/Abhinav Projects/atul_pos')
+sys.path.append('/root/atul_icecream/atul_pos')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.base')
 django.setup()
 

@@ -11,12 +11,21 @@ class LoginView(APIView):
 
     def post(self, request):
         email = request.data.get('email')
+        phone = request.data.get('phone')
         password = request.data.get('password')
         pin = request.data.get('pin')
 
         user = None
-        if email and password:
-            user = authenticate(username=email, password=password)
+        if (phone or email) and password:
+            if phone:
+                # Look up user by phone, then authenticate via email
+                try:
+                    matched = User.objects.get(phone=phone.strip(), is_active=True)
+                    user = authenticate(username=matched.email, password=password)
+                except User.DoesNotExist:
+                    user = None
+            else:
+                user = authenticate(username=email, password=password)
         elif pin:
             users = User.objects.filter(is_active=True).exclude(pin__isnull=True)
             for cached_user in users:

@@ -5,6 +5,7 @@ from .models import User
 class UserSerializer(serializers.ModelSerializer):
     password     = serializers.CharField(write_only=True, required=False, allow_blank=True)
     outlet_name  = serializers.SerializerMethodField()
+    email        = serializers.EmailField(required=False, allow_blank=True)
 
     class Meta:
         model  = User
@@ -21,6 +22,17 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
+        # Auto-generate a unique email from phone if not provided
+        phone = validated_data.get('phone', '')
+        if not validated_data.get('email'):
+            import uuid
+            base = phone.strip() if phone else str(uuid.uuid4())[:8]
+            email = f"{base}@atulpos.local"
+            # Ensure uniqueness
+            from apps.accounts.models import User as UserModel
+            if UserModel.objects.filter(email=email).exists():
+                email = f"{base}_{str(uuid.uuid4())[:4]}@atulpos.local"
+            validated_data['email'] = email
         user = User(**validated_data)
         if password:
             user.set_password(password)

@@ -4,7 +4,7 @@ import { IceCream } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Login({ onLoginSuccess }) {
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,7 +14,7 @@ export default function Login({ onLoginSuccess }) {
     setLoading(true);
     setError('');
     try {
-      const response = await authApi.login({ email, password });
+      const response = await authApi.login({ phone, password });
       const loginData = response.data?.data || response.data;
       const { access, refresh, user } = loginData;
       localStorage.setItem('access_token', access);
@@ -22,7 +22,7 @@ export default function Login({ onLoginSuccess }) {
       localStorage.setItem('user', JSON.stringify(user));
       onLoginSuccess(user);
     } catch (err) {
-      setError('Invalid email or password');
+      setError('Invalid phone number or password');
     } finally {
       setLoading(false);
     }
@@ -45,14 +45,14 @@ export default function Login({ onLoginSuccess }) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-bold text-atul-charcoal mb-2 ml-1">Email Address</label>
+            <label className="block text-sm font-bold text-atul-charcoal mb-2 ml-1">Mobile Number</label>
             <input
-              type="email"
+              type="tel"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               className="w-full px-5 py-4 rounded-2xl bg-atul-cream border-transparent focus:bg-white focus:ring-2 ring-atul-pink_primary border border-atul-pink_soft outline-none transition-all"
-              placeholder="admin@atul.com"
+              placeholder="9876543210"
             />
           </div>
           <div>
