@@ -6,8 +6,8 @@
  * - In Browser: Prints via hidden iframe (only the receipt/KOT, not the full page).
  */
 
-// navigator.userAgent contains "Electron" in all Electron windows, including remote URLs
-const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+// Custom userAgent set in main.cjs to detect Electron environment
+const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
 
 /**
  * Prints the innerHTML of a given DOM ref via a hidden iframe.

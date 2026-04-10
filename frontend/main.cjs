@@ -87,6 +87,11 @@ function createWindow() {
     icon: path.join(__dirname, 'public/vite.svg')
   });
 
+  // Set custom userAgent so React can detect Electron environment
+  mainWindow.webContents.setUserAgent(
+    mainWindow.webContents.getUserAgent() + ' AtulPOS-Electron'
+  );
+
   const startUrl = process.env.ELECTRON_START_URL || 'https://atulicecream.com/pos/login';
   mainWindow.loadURL(startUrl);
 
