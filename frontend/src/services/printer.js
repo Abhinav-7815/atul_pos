@@ -60,7 +60,19 @@ async function isQZAvailable() {
     // 1. Set Security
     window.qz.security.setCertificatePromise(() => Promise.resolve(QZ_CERT));
     window.qz.security.setSignatureAlgorithm('SHA512');
-    window.qz.security.setSignaturePromise(() => (resolve) => resolve(""));
+    window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+      fetch('/api/v1/auth/qz-sign/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request: toSign }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.signature) resolve(data.signature);
+          else reject('Signing failed');
+        })
+        .catch(reject);
+    });
 
     // 2. Connect (don't await the promise as it might hang)
     if (!window.qz.websocket.isActive()) {
@@ -114,9 +126,10 @@ async function doPrint(html) {
             
             if (printerName) {
                 const config = window.qz.configs.create(printerName);
+                
                 const data = [{
                    type: 'pixel', format: 'html', flavor: 'plain',
-                   data: `<!DOCTYPE html><html><body><style>@page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 0; font-family: Arial; width: 80mm; font-size: 14px; }</style>${html}</body></html>`
+                   data: `<!DOCTYPE html><html><body style="margin:0;padding:0;"><style>@page { margin: 0; size: auto; } body { font-family: Arial, sans-serif; width: 100%; }</style>${html}</body></html>`
                 }];
                 await window.qz.print(config, data);
                 console.log('[Printer] Printed successfully');

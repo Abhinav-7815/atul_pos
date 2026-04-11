@@ -8,7 +8,7 @@ from apps.menu.views import (
     ModifierGroupViewSet, ModifierViewSet
 )
 from apps.orders.views import OrderViewSet
-from apps.accounts.auth_views import LoginView, OutletSwitchView
+from apps.accounts.auth_views import LoginView, OutletSwitchView, QZSignView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 router = DefaultRouter()
@@ -40,4 +40,5 @@ urlpatterns = [
     path('auth/login/', LoginView.as_view(), name='auth_login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/outlet-switch/', OutletSwitchView.as_view(), name='outlet_switch'),
+    path('auth/qz-sign/', QZSignView.as_view(), name='qz_sign'),
 ]

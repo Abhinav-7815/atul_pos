@@ -5,6 +5,30 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from apps.accounts.models import User
 from apps.outlets.models import Outlet
+import base64
+import hashlib
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+import os
+
+QZ_PRIVATE_KEY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'qz-private-key.pem')
+
+class QZSignView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        request_to_sign = request.data.get('request', '')
+        try:
+            with open(QZ_PRIVATE_KEY_PATH, 'rb') as f:
+                private_key = serialization.load_pem_private_key(f.read(), password=None)
+            signature = private_key.sign(
+                request_to_sign.encode('utf-8'),
+                padding.PKCS1v15(),
+                hashes.SHA512()
+            )
+            return Response({'signature': base64.b64encode(signature).decode('utf-8')})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
