@@ -74,59 +74,76 @@ function loadQZScript() {
   });
 }
 
+let qzInitPromise = null;
+
 async function isQZAvailable() {
-  try {
-    await loadQZScript();
-    if (!window.qz) return false;
+  if (qzInitPromise) return qzInitPromise;
 
-    // Set certificate + sign requests with private key so QZ Tray trusts without popup
-    window.qz.security.setCertificatePromise((resolve) => resolve(QZ_CERT));
-    window.qz.security.setSignatureAlgorithm('SHA512');
-    window.qz.security.setSignaturePromise((toSign) => {
-      return new Promise((resolve, reject) => {
-        try {
-          const algo = { name: 'RSASSA-PKCS1-v1_5', hash: { name: 'SHA-512' } };
-          const pemBody = QZ_PRIVATE_KEY
-            .replace('-----BEGIN PRIVATE KEY-----', '')
-            .replace('-----END PRIVATE KEY-----', '')
-            .replace(/\s+/g, '');
-          const binaryDer = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
-          crypto.subtle.importKey('pkcs8', binaryDer.buffer, algo, false, ['sign'])
-            .then(key => crypto.subtle.sign(algo, key, new TextEncoder().encode(toSign)))
-            .then(sig => resolve(btoa(String.fromCharCode(...new Uint8Array(sig)))))
-            .catch(reject);
-        } catch (err) { reject(err); }
+  qzInitPromise = (async () => {
+    try {
+      console.log('[QZ] Initializing QZ Tray library...');
+      await loadQZScript();
+      if (!window.qz) return false;
+
+      // 1. Set Security Promises (ONLY ONCE)
+      window.qz.security.setCertificatePromise(() => Promise.resolve(QZ_CERT));
+      window.qz.security.setSignatureAlgorithm('SHA512');
+      window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+        const algo = { name: 'RSASSA-PKCS1-v1_5', hash: { name: 'SHA-512' } };
+        const pem = QZ_PRIVATE_KEY.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s+/g, '');
+        const binary = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+        crypto.subtle.importKey('pkcs8', binary.buffer, algo, false, ['sign'])
+          .then(key => crypto.subtle.sign(algo, key, new TextEncoder().encode(toSign)))
+          .then(sig => resolve(btoa(String.fromCharCode(...new Uint8Array(sig)))))
+          .catch(reject);
       });
-    });
 
-    if (!window.qz.websocket.isActive()) {
-      await window.qz.websocket.connect({ retries: 1, delay: 0.5 });
+      // 2. Connect to WebSocket
+      if (!window.qz.websocket.isActive()) {
+        console.log('[QZ] Connecting to WebSocket...');
+        await window.qz.websocket.connect({ retries: 2, delay: 1 });
+      }
+
+      console.log('[QZ] Initialization complete.');
+      return window.qz.websocket.isActive();
+    } catch (err) {
+      console.error('[QZ] Init failed:', err);
+      qzInitPromise = null; // Allow retry on next call
+      return false;
     }
-    return window.qz.websocket.isActive();
-  } catch {
-    return false;
-  }
+  })();
+
+  return qzInitPromise;
 }
 
+let printingLock = false;
+
 async function printViaQZ(htmlContent) {
-  const config = window.qz.configs.create('EPSON TM-T82 Receipt');
-  const data = [{
-    type: 'pixel',
-    format: 'html',
-    flavor: 'plain',
-    data: `<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8"/>
-    <style>
-      @page { margin: 0; size: 80mm auto; }
-      body { margin: 0; padding: 0; font-family: Arial, sans-serif; width: 80mm; }
-    </style>
-  </head>
-  <body>${htmlContent}</body>
-</html>`,
-  }];
-  await window.qz.print(config, data);
+  // Simple lock to prevent double-printing crash
+  while (printingLock) { await new Promise(r => setTimeout(r, 100)); }
+  printingLock = true;
+  
+  try {
+    console.log('[QZ] Searching for printer...');
+    const printers = await window.qz.printers.find('EPSON').catch(() => []);
+    const printerName = (printers && printers.length > 0) 
+      ? (Array.isArray(printers) ? printers[0] : printers)
+      : await window.qz.printers.getDefault();
+
+    if (!printerName) throw new Error('No printer found');
+
+    const config = window.qz.configs.create(printerName);
+    const data = [{
+      type: 'pixel', format: 'html', flavor: 'plain',
+      data: `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 0; font-family: Arial, sans-serif; width: 80.0mm; font-size: 14px; }</style></head><body>${htmlContent}</body></html>`
+    }];
+    
+    console.log('[QZ] Sending job to:', printerName);
+    await window.qz.print(config, data);
+    console.log('[QZ] Job sent.');
+  } finally {
+    printingLock = false;
+  }
 }
 
 // ── Electron local server ────────────────────────────────────────────────────
@@ -192,24 +209,39 @@ function getRefHtml(ref) {
 // ── Main print functions ─────────────────────────────────────────────────────
 
 async function doPrint(html) {
-  if (!html) { window.print(); return; }
+  console.log('[Printer] Starting doPrint task...');
+  if (!html || html.trim().length === 0) {
+    console.error('[Printer] HTML content is empty! Falling back to window.print()');
+    window.print(); 
+    return; 
+  }
+
+  console.log('[Printer] HTML content size:', html.length, 'chars');
 
   if (isElectron) {
-    console.log('[Printer] Electron: silent print via local server...');
+    console.log('[Printer] Target: Electron Local Server');
     await silentPrintViaLocalServer(html);
     return;
   }
 
   // Try QZ Tray first
+  console.log('[Printer] Target: checking QZ Tray availability...');
   const qzOk = await isQZAvailable();
   if (qzOk) {
-    console.log('[Printer] QZ Tray: silent print...');
-    await printViaQZ(html);
-    return;
+    console.log('[Printer] QZ Tray is ACTIVE. Attempting printViaQZ...');
+    try {
+      await printViaQZ(html);
+      console.log('[Printer] printViaQZ completed.');
+      return;
+    } catch (err) {
+      console.error('[Printer] QZ Tray print ERROR, falling back to iframe:', err);
+    }
+  } else {
+    console.warn('[Printer] QZ Tray is NOT available.');
   }
 
   // Fallback: iframe
-  console.log('[Printer] Browser: iframe print (dialog will show)...');
+  console.log('[Printer] Target: Iframe Fallback (showing dialog)');
   await printViaIframe(html);
 }
 
