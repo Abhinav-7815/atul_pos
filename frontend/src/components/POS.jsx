@@ -12,7 +12,7 @@ import {
 import { menuApi, orderApi } from '../services/api';
 import { inventoryApi } from '../services/api';
 import { offlineService } from '../services/offline';
-import { printReceipt } from '../services/printer';
+import { printReceipt, printOrderEscPos } from '../services/printer';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Fullscreen } from 'lucide-react';
@@ -507,16 +507,22 @@ export default function POS({ user }) {
       const updatedOrder = { ...or, receipt: rr, cartSnapshot: [...cart] };
       setLastOrder(updatedOrder);
       
-      // AUTO-PRINT Logic: Use a small timeout to ensure refs are updated with lastOrder content
-      setTimeout(() => {
-        console.log('[POS] Triggering Auto-Print...');
-        printReceipt({ receiptRef });
+      // AUTO-PRINT: Electron mein ESC/POS raw bytes (no dialog), bahar QZ/browser fallback
+      const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
+      if (isElectron) {
+        console.log('[POS] Electron ESC/POS Auto-Print...');
+        printOrderEscPos(rr);  // rr = receipt data from API
+      } else {
+        setTimeout(() => {
+          console.log('[POS] Browser Auto-Print...');
+          printReceipt({ receiptRef });
+        }, 800);
+      }
 
-        // Auto-WhatsApp if phone exists
-        if (updatedOrder.customer_phone) {
-          sendOrderToWhatsApp(updatedOrder);
-        }
-      }, 800);
+      // Auto-WhatsApp if phone exists
+      if (updatedOrder.customer_phone) {
+        sendOrderToWhatsApp(updatedOrder);
+      }
 
       setStep('select'); // Reset to menu immediately
       setCart([]);
@@ -1897,76 +1903,52 @@ const PrintTemplates = ({ lastOrder, receiptRef }) => {
   return (
     <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', height: '0', overflow: 'hidden' }}>
         {/* ── Epson 80mm Premium Receipt Template ── */}
-        <div ref={receiptRef} style={{ display: 'block', width: '80mm', fontFamily: "'Arial', sans-serif", background: 'white' }}>
-          {/* Safe-Zone Wrapper */}
-          <div style={{ padding: '0 4mm' }}>
-            <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-              <div style={{ fontSize: '22px', fontWeight: '900', letterSpacing: '-1px', marginBottom: '2px' }}>ATUL ICE CREAM</div>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#333', textTransform: 'uppercase' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
-              <div style={{ fontSize: '8px', color: '#666' }}>{r.outlet?.address || 'Ahmedabad, Gujarat'}</div>
-              <div style={{ fontSize: '10px', fontWeight: '800', marginTop: '4px' }}>PH: {r.outlet?.phone || '+91 99999 99999'}</div>
-              <div style={{ fontSize: '8px', fontWeight: '700' }}>GSTIN: {r.outlet?.gstin || '24AAAAA0000A1Z5'}</div>
-            </div>
+        <div ref={receiptRef} style={{ display: 'block', width: '45mm', fontFamily: "'Courier New', Courier, monospace", background: 'white', color: '#000', margin: '0' }}>
+          <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>ATUL ICE CREAM</div>
+            <div style={{ fontSize: '8px' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
+            <div style={{ fontSize: '8px' }}>PH: {r.outlet?.phone || '+91 98257 58887'}</div>
+            <div style={{ fontSize: '7px' }}>GST: {r.outlet?.gstin || '24AAAAA0000A1Z5'}</div>
+          </div>
 
-            <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: '900', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', margin: '10px 0' }}>
-              TAX INVOICE
-            </div>
+          <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', textAlign: 'center', fontSize: '10px', padding: '2px 0', margin: '5px 0' }}>
+            INVOICE: {lastOrder.order_number?.slice(-6)}
+          </div>
 
-            <div style={{ fontSize: '10px', lineHeight: '1.5' }}>
+          <div style={{ fontSize: '8px', marginBottom: '5px' }}>
+            {new Date(lastOrder.created_at).toLocaleDateString()} {new Date(lastOrder.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+          </div>
+
+          <div style={{ borderBottom: '1px solid #000', marginBottom: '5px' }}></div>
+
+          {(r.items || []).map((item, i) => (
+            <div key={i} style={{ marginBottom: '8px', fontSize: '9px' }}>
+              <div style={{ fontWeight: 'bold' }}>{item.product_name}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: '700' }}>Bill No: {lastOrder.order_number}</span>
-                <span>{lastOrder.order_type === 'dine_in' ? 'DINE-IN' : 'TAKEAWAY'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Date: {orderDate.toLocaleDateString('en-IN')}</span>
-                <span>Time: {orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span>{item.quantity} x {Number(item.item_subtotal / item.quantity).toFixed(0)}</span>
+                <span style={{ fontWeight: 'bold' }}>{Number(item.item_subtotal).toFixed(0)}</span>
               </div>
             </div>
+          ))}
 
-            <div style={{ borderTop: '1px solid #000', margin: '8px 0' }}></div>
-
-            <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #000', fontWeight: '900' }}>
-                  <td style={{ padding: '4px 0' }}>ITEM</td>
-                  <td style={{ textAlign: 'center' }}>QTY</td>
-                  <td style={{ textAlign: 'right' }}>AMT</td>
-                </tr>
-              </thead>
-              <tbody>
-                {(r.items || []).map((item, i) => (
-                  <tr key={i} style={{ verticalAlign: 'top' }}>
-                    <td style={{ padding: '4px 0' }}>
-                      <div style={{ fontWeight: '800', fontSize: '11px' }}>{item.product_name}</div>
-                      {item.variant_name && <div style={{ fontSize: '8px' }}>{item.variant_name}</div>}
-                    </td>
-                    <td style={{ textAlign: 'center', padding: '4px 0' }}>{item.quantity}</td>
-                    <td style={{ textAlign: 'right', padding: '4px 0' }}>{Number(item.item_subtotal).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div style={{ borderTop: '1px dashed #000', marginTop: '8px', paddingTop: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
-                <span>Subtotal</span>
-                <span>₹{Number(r.totals?.subtotal).toFixed(2)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
-                <span>Tax (GST 5%)</span>
-                <span>₹{Number(r.totals?.cgst + r.totals?.sgst).toFixed(2)}</span>
-              </div>
+          <div style={{ borderTop: '1px solid #000', marginTop: '5px', paddingTop: '5px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+              <span>SUBTOTAL:</span>
+              <span>{Number(r.totals?.subtotal).toFixed(0)}</span>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '900', borderTop: '2px solid #000', marginTop: '10px', paddingTop: '5px', paddingBottom: '5px' }}>
-              <span>TOTAL</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+              <span>TAX(5%):</span>
+              <span>{Number(r.totals?.cgst + r.totals?.sgst).toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold', marginTop: '5px' }}>
+              <span>TOTAL:</span>
               <span>₹{Number(r.totals?.total).toFixed(0)}</span>
             </div>
+          </div>
 
-            <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '10px' }}>
-              <div style={{ fontWeight: '800' }}>THANK YOU!</div>
-              <div style={{ fontSize: '8px', color: '#666' }}>Items once sold cannot be returned.</div>
-            </div>
+          <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '8px' }}>
+            *** THANK YOU ***
+            <div style={{ marginTop: '5px' }}>visit again!</div>
           </div>
           <div style={{ height: '30px' }}></div>
         </div>

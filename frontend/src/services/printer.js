@@ -1,8 +1,36 @@
 /**
- * Atul POS — Print Service (Brute Force Version)
+ * Atul POS — Print Service
+ *
+ * Priority order:
+ *  1. Local Print Server (localhost:9191) — Python Flask ya Electron, koi dialog nahi
+ *  2. QZ Tray — agar print server nahi chal raha
+ *  3. Browser window.print() — last fallback (dialog aata hai)
  */
 
-const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
+const PRINT_SERVER = 'http://127.0.0.1:9191';
+
+// ─── LOCAL PRINT SERVER (Python Flask / Electron) ──────────────────────────
+
+async function isPrintServerAvailable() {
+  try {
+    const res = await fetch(`${PRINT_SERVER}/health`, { signal: AbortSignal.timeout(800) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function sendToPrintServer(payload) {
+  const res = await fetch(`${PRINT_SERVER}/print`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+// ─── QZ TRAY ───────────────────────────────────────────────────────────────
 
 const QZ_CERT = `-----BEGIN CERTIFICATE-----
 MIIDrzCCApegAwIBAgIUTG3P1A4i9+RRqAGLTpFC4jQcUQMwDQYJKoZIhvcNAQEL
@@ -42,22 +70,19 @@ let isInitializing = false;
 async function isQZAvailable() {
   if (window.qz?.websocket?.isActive()) return true;
   if (isInitializing) {
-     // Wait for existing initialization to finish
-     let limit = 0;
-     while (isInitializing && limit < 50) {
-        await new Promise(r => setTimeout(r, 100));
-        limit++;
-     }
-     return window.qz?.websocket?.isActive();
+    let limit = 0;
+    while (isInitializing && limit < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      limit++;
+    }
+    return window.qz?.websocket?.isActive();
   }
 
   isInitializing = true;
   try {
-    console.log('[Printer] Initializing...');
     await loadQZScript();
     if (!window.qz) return false;
 
-    // 1. Set Security
     window.qz.security.setCertificatePromise(() => Promise.resolve(QZ_CERT));
     window.qz.security.setSignatureAlgorithm('SHA512');
     window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
@@ -69,98 +94,129 @@ async function isQZAvailable() {
         .then(r => r.json())
         .then(data => {
           const sig = data.signature || data?.data?.signature;
-          if (sig) resolve(sig);
-          else reject('Signing failed');
+          if (sig) resolve(sig); else reject('Signing failed');
         })
         .catch(reject);
     });
 
-    // 2. Connect (don't await the promise as it might hang)
     if (!window.qz.websocket.isActive()) {
-       window.qz.websocket.connect({ retries: 2, delay: 1 });
-       
-       // Manually wait for connection
-       let wait = 0;
-       while (!window.qz.websocket.isActive() && wait < 40) {
-          await new Promise(r => setTimeout(r, 100));
-          wait++;
-       }
+      window.qz.websocket.connect({ retries: 2, delay: 1 });
+      let wait = 0;
+      while (!window.qz.websocket.isActive() && wait < 40) {
+        await new Promise(r => setTimeout(r, 100));
+        wait++;
+      }
     }
-
-    console.log('[Printer] Status:', window.qz.websocket.isActive() ? 'Connected' : 'Failed');
     return window.qz.websocket.isActive();
-  } catch (err) {
-    console.warn('[Printer] Connection error');
+  } catch {
     return false;
   } finally {
     isInitializing = false;
   }
 }
 
+async function printViaQZ(html) {
+  const ok = await isQZAvailable();
+  if (!ok) return false;
+  try {
+    const printers = await window.qz.printers.find('EPSON').catch(() => []);
+    const printerName = (Array.isArray(printers) ? printers[0] : printers)
+      || await window.qz.printers.getDefault();
+    if (!printerName) return false;
+
+    const config = window.qz.configs.create(printerName);
+    config.setMargins(0);
+    config.setDensity(203);
+    config.setUnits('mm');
+
+    await window.qz.print(config, [{
+      type: 'pixel', format: 'html', flavor: 'plain',
+      options: { pageWidth: 58, pageHeight: 200, renderDensity: 203, centerImage: true },
+      data: `<!DOCTYPE html><html><body style="margin:0;padding:0;">
+        <style>@page{margin:0;size:58mm auto;}body{font-family:Arial,sans-serif;width:48mm;}</style>
+        ${html}</body></html>`
+    }]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── MAIN PRINT LOGIC ──────────────────────────────────────────────────────
+
 let printQueue = Promise.resolve();
 
+/**
+ * HTML receipt print karo.
+ * Flow: Print Server → QZ Tray → browser fallback
+ */
 async function doPrint(html) {
   if (!html) return;
-  
-  // Add to queue to prevent concurrent attempts
+
   printQueue = printQueue.then(async () => {
-    console.log('[Printer] Processing item...');
-    
-    if (isElectron) {
+    // 1. Local print server (Python Flask ya Electron) — no dialog
+    const serverUp = await isPrintServerAvailable();
+    if (serverUp) {
       try {
-        await fetch('http://127.0.0.1:9191/print', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ html, deviceName: 'EPSON TM-T82 Receipt' }),
-        });
-      } catch (e) {}
+        const result = await sendToPrintServer({ html });
+        if (result.success) {
+          console.log('[Printer] OK via local print server');
+          return;
+        }
+      } catch { /* fall through */ }
+    }
+
+    // 2. QZ Tray
+    console.log('[Printer] Print server nahi mila, QZ Tray try kar raha hun...');
+    const qzOk = await printViaQZ(html);
+    if (qzOk) {
+      console.log('[Printer] OK via QZ Tray');
       return;
     }
 
-    const ok = await isQZAvailable();
-    if (ok) {
-        try {
-            const printers = await window.qz.printers.find('EPSON').catch(() => []);
-            const printerName = (printers && (Array.isArray(printers) ? printers.length > 0 : printers))
-                ? (Array.isArray(printers) ? printers[0] : printers)
-                : await window.qz.printers.getDefault();
-            
-            if (printerName) {
-                const config = window.qz.configs.create(printerName);
-                
-                // FORCE EXPLICIT UNITS AND DENSITY
-                config.setMargins(0);
-                config.setDensity(203); // Standard for thermal printers
-                config.setUnits('mm');
-                
-                const data = [{
-                   type: 'pixel', format: 'html', flavor: 'plain',
-                   options: { 
-                     pageWidth: 58, 
-                     pageHeight: 200, 
-                     renderDensity: 203,
-                     centerImage: true 
-                   },
-                   data: `<!DOCTYPE html><html><body style="margin:0;padding:0;"><style>@page { margin: 0; size: 58mm auto; } body { font-family: Arial, sans-serif; width: 48mm; }</style>${html}</body></html>`
-                }];
-                await window.qz.print(config, data);
-                console.log('[Printer] Printed successfully');
-                return;
-            }
-        } catch (e) { console.warn('[Printer] QZ Print failed'); }
-    }
-
-    // Iframe Fallback
-    console.log('[Printer] Falling back to browser print');
+    // 3. Browser fallback (dialog aayega)
+    console.log('[Printer] Fallback: browser print dialog');
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed'; iframe.style.visibility = 'hidden';
+    iframe.style.position = 'fixed';
+    iframe.style.visibility = 'hidden';
     iframe.srcdoc = `<html><body onload="window.print();">${html}</body></html>`;
     document.body.appendChild(iframe);
-    setTimeout(() => document.body.removeChild(iframe), 2000);
+    setTimeout(() => document.body.removeChild(iframe), 3000);
   });
-  
+
   return printQueue;
 }
 
+// ─── EXPORTS ───────────────────────────────────────────────────────────────
+
 const getRefHtml = (ref) => ref?.current?.innerHTML || '';
+
+/** POS.jsx se call hota hai — HTML ref se print */
 export const printReceipt = ({ receiptRef }) => doPrint(getRefHtml(receiptRef));
+
+/**
+ * ESC/POS structured JSON print (Django receipt data).
+ * Print server ko raw JSON bhejta hai — server ESC/POS bytes banata hai.
+ * Agar server nahi chal raha to HTML fallback.
+ */
+export async function printOrderEscPos(orderData) {
+  if (!orderData) return;
+
+  printQueue = printQueue.then(async () => {
+    const serverUp = await isPrintServerAvailable();
+    if (serverUp) {
+      try {
+        // No 'html' field → print_server.py ESC/POS path use karega
+        const result = await sendToPrintServer(orderData);
+        if (result.success) {
+          console.log('[Printer] ESC/POS OK via print server:', result.printer || '');
+          return;
+        }
+      } catch { /* fall through */ }
+    }
+
+    console.warn('[Printer] ESC/POS print server nahi mila — QZ/browser fallback nahi kaam karega bina HTML ke');
+  });
+
+  return printQueue;
+}

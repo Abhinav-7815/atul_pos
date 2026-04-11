@@ -7,6 +7,8 @@ from .serializers import OrderSerializer, OrderItemSerializer, PaymentSerializer
 from apps.core.permissions import IsCashier
 from apps.core.utils import record_audit
 from decimal import Decimal
+import threading
+import requests as http_requests
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.none()
@@ -57,6 +59,67 @@ class OrderViewSet(viewsets.ModelViewSet):
             instance=order,
             description=f"Order {order.order_number} created for {order.order_type}."
         )
+        # Auto-print: background thread mein chalao taaki response delay na ho
+        threading.Thread(target=_trigger_auto_print, args=(order,), daemon=True).start()
+
+
+# ─── AUTO-PRINT HELPER ────────────────────────────────────────────────────────
+
+PRINT_SERVER_URL = "http://127.0.0.1:9191/print"
+
+def _build_receipt_payload(order: Order) -> dict:
+    """Order object se print server ke liye JSON payload banata hai."""
+    from .serializers import OrderItemSerializer, PaymentSerializer
+
+    cgst = order.tax_amount / 2
+    sgst = order.tax_amount / 2
+
+    items_data = []
+    for item in order.items.all():
+        items_data.append({
+            "product_name": item.product.name,
+            "quantity": float(item.quantity),
+            "unit_price": float(item.unit_price),
+            "item_total": float(item.item_total),
+        })
+
+    return {
+        "outlet": {
+            "name":    order.outlet.name,
+            "address": order.outlet.address or "",
+            "phone":   order.outlet.phone or "",
+            "gstin":   order.outlet.gstin or "",
+        },
+        "order_number": order.order_number,
+        "date":         order.created_at.isoformat(),
+        "cashier":      order.created_by.full_name if order.created_by else "",
+        "order_type":   order.order_type,
+        "items":        items_data,
+        "totals": {
+            "subtotal": float(order.subtotal),
+            "cgst":     float(cgst),
+            "sgst":     float(sgst),
+            "discount": float(order.discount_amount),
+            "total":    float(order.total_amount),
+        },
+    }
+
+
+def _trigger_auto_print(order: Order):
+    """Background thread: print server ko call karta hai."""
+    try:
+        payload = _build_receipt_payload(order)
+        resp = http_requests.post(PRINT_SERVER_URL, json=payload, timeout=5)
+        if resp.status_code == 200:
+            print(f"[AutoPrint] OK — {order.order_number}")
+        else:
+            print(f"[AutoPrint] Server error {resp.status_code} — {order.order_number}")
+    except http_requests.exceptions.ConnectionError:
+        print(f"[AutoPrint] Print server not running (skipped) — {order.order_number}")
+    except Exception as e:
+        print(f"[AutoPrint] Failed — {order.order_number}: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
 
     @action(detail=True, methods=['post'])
     def items(self, request, pk=None):

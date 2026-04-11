@@ -24,6 +24,8 @@ import {
   EyeOff,
   Trash2,
   Shield,
+  Printer,
+  RefreshCw,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -257,6 +259,7 @@ export default function Settings({ user, onUpdateUser }) {
                { id: 'general', label: 'Store Profile', icon: <Store size={20}/> },
                { id: 'tax', label: 'Taxes & GST', icon: <Percent size={20}/> },
                { id: 'receipt', label: 'Receipt Designer', icon: <Receipt size={20}/> },
+               { id: 'printer', label: 'Printer', icon: <Printer size={20}/> },
                { id: 'users', label: 'Users', icon: <Users size={20}/> },
              ].filter(Boolean).map(t => (
                <button
@@ -378,6 +381,10 @@ export default function Settings({ user, onUpdateUser }) {
                        </div>
                     </div>
                   </motion.div>
+                )}
+
+                {activeTab === 'printer' && (
+                  <PrinterSettings />
                 )}
 
                 {activeTab === 'receipt' && (
@@ -765,5 +772,160 @@ export default function Settings({ user, onUpdateUser }) {
           </div>
       </div>
     </div>
+  );
+}
+
+// ─── Printer Settings Component ───────────────────────────────────────────────
+function PrinterSettings() {
+  const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
+  const [printers, setPrinters]       = useState([]);
+  const [selected, setSelected]       = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const [testStatus, setTestStatus]   = useState('');
+
+  useEffect(() => { fetchPrinters(); }, []);
+
+  async function fetchPrinters() {
+    setLoading(true);
+    try {
+      if (isElectron) {
+        // IPC via preload
+        const list = await window.electronAPI.getPrinters();
+        const cfg  = await window.electronAPI.getConfig();
+        setPrinters(list || []);
+        setSelected(cfg?.printerName || '');
+      } else {
+        // HTTP fallback (print server running separately)
+        const res  = await fetch('http://127.0.0.1:9191/printers');
+        const data = await res.json();
+        setPrinters(data.printers || []);
+        setSelected(data.selected || '');
+      }
+    } catch {
+      setPrinters([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function savePrinter() {
+    try {
+      if (isElectron) {
+        await window.electronAPI.setPrinter(selected);
+      } else {
+        await fetch('http://127.0.0.1:9191/set-printer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ printerName: selected }),
+        });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
+  }
+
+  async function testPrint() {
+    setTestStatus('printing...');
+    try {
+      const testData = {
+        outlet:       { name: 'ATUL ICE CREAM', address: 'Test Mode', phone: '9825758887', gstin: '' },
+        order_number: 'TEST-0001',
+        date:         new Date().toISOString(),
+        cashier:      'System',
+        order_type:   'dine_in',
+        items:        [{ product_name: 'Vanilla Cup', quantity: 1, unit_price: 38, item_total: 38 }],
+        totals:       { subtotal: 38, cgst: 0.95, sgst: 0.95, discount: 0, total: 39.90 },
+      };
+      const res = await fetch('http://127.0.0.1:9191/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testData),
+      });
+      const data = await res.json();
+      setTestStatus(data.success ? 'Printed!' : ('Error: ' + data.error));
+    } catch {
+      setTestStatus('Print server not reachable');
+    }
+    setTimeout(() => setTestStatus(''), 3000);
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+      <h3 className="text-xl font-serif font-bold mb-6 flex items-center gap-3">
+        <div className="size-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
+          <Printer size={20} />
+        </div>
+        Printer Setup
+      </h3>
+
+      {!isElectron && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+          <strong>Note:</strong> Ye settings sirf Electron (desktop) app mein fully kaam karti hain.
+          Browser mein print server alag chalana padta hai.
+        </div>
+      )}
+
+      <div>
+        <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">
+          Receipt Printer Select Karo
+        </label>
+        <div className="flex gap-3">
+          <select
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+            className="flex-1 bg-gray-50/50 border-white border-2 rounded-2xl px-4 py-3 font-bold outline-none focus:border-atul-pink_primary/20"
+          >
+            <option value="">-- Printer choose karo --</option>
+            {printers.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <button
+            onClick={fetchPrinters}
+            className="px-4 py-3 bg-gray-100 rounded-2xl hover:bg-gray-200 transition-all"
+            title="Refresh list"
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
+        {loading && <p className="text-xs text-gray-400 mt-2">Printers load ho rahe hain...</p>}
+        {printers.length === 0 && !loading && (
+          <p className="text-xs text-red-400 mt-2">Koi printer nahi mila. Windows printer settings check karo.</p>
+        )}
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={savePrinter}
+          disabled={!selected}
+          className="flex items-center gap-2 px-6 py-3 bg-atul-pink_primary text-white rounded-2xl font-bold text-sm disabled:opacity-40 hover:opacity-90 transition-all"
+        >
+          {saved ? <CheckCircle size={16} /> : <Save size={16} />}
+          {saved ? 'Saved!' : 'Save Printer'}
+        </button>
+        <button
+          onClick={testPrint}
+          disabled={!selected}
+          className="flex items-center gap-2 px-6 py-3 bg-gray-100 rounded-2xl font-bold text-sm disabled:opacity-40 hover:bg-gray-200 transition-all"
+        >
+          <Printer size={16} />
+          Test Print
+        </button>
+      </div>
+
+      {testStatus && (
+        <p className={`text-sm font-bold ${testStatus.includes('Error') || testStatus.includes('not') ? 'text-red-500' : 'text-green-500'}`}>
+          {testStatus}
+        </p>
+      )}
+
+      <div className="bg-gray-50 rounded-2xl p-4 text-xs text-gray-500 space-y-1">
+        <p><strong>Currently saved:</strong> {selected || 'None'}</p>
+        <p>Printer sirf ek baar set karo — phir har order pe automatically print niklegi.</p>
+      </div>
+    </motion.div>
   );
 }
