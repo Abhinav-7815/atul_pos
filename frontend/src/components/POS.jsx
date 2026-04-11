@@ -5,14 +5,14 @@ import {
   Search, Plus, Minus, Trash2, X, Printer, Phone,
   Loader2, ChevronRight, Check, ArrowLeft,
   ShoppingBag, Clock, User, Store, ArrowUpRight,
-  Pause, Play, History, ChefHat, Weight, Droplets,
+  Pause, Play, History, Weight, Droplets,
   Banknote, QrCode, CreditCard, CheckCircle2, Sparkles,
   LayoutGrid, Maximize, Minimize
 } from 'lucide-react';
 import { menuApi, orderApi } from '../services/api';
 import { inventoryApi } from '../services/api';
 import { offlineService } from '../services/offline';
-import { printReceipt, printKOT } from '../services/printer';
+import { printReceipt } from '../services/printer';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Fullscreen } from 'lucide-react';
@@ -79,7 +79,7 @@ const getVariationsForItem = (item) => {
 
 const format100g = (name, qty = 1) => {
   if (!name) return name;
-  const is100g = ['100g', '100gm', '100gms', '100gram', '100grams'].includes(name.toLowerCase().replace(/\\s/g, ''));
+  const is100g = ['100g', '100gm', '100gms', '100gram', '100grams'].includes(name.toLowerCase().replace(/\s/g, ''));
   if (is100g) return qty === 1 ? '1 Cup' : `${qty} Cups`;
   return name;
 };
@@ -113,7 +113,6 @@ export default function POS({ user }) {
   const [isHoldingModalOpen, setIsHoldingModalOpen] = useState(false);
 
   const receiptRef = useRef(null);
-  const kotRef = useRef(null);
   const [posConfig, setPosConfig] = useState({ showAdvancedManager: true });
   const [managerItem, setManagerItem] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
@@ -469,7 +468,7 @@ export default function POS({ user }) {
 
     if (!isOnline) {
       offlineService.saveOrder(orderData);
-      setLastOrder({ 
+      const offlineOrder = { 
         ...orderData, 
         order_number: `OFF-${Date.now().toString().slice(-4)}`,
         created_at: new Date().toISOString(),
@@ -484,8 +483,15 @@ export default function POS({ user }) {
           })),
           totals: { subtotal, total, cgst: tax/2, sgst: tax/2 }
         }
-      });
-      setStep('success');
+      };
+      setLastOrder(offlineOrder);
+      
+      // AUTO-PRINT Logic for Offline
+      setTimeout(() => {
+        printReceipt({ receiptRef });
+      }, 300);
+
+      setStep('select');
       setCart([]);
       return;
     }
@@ -498,8 +504,21 @@ export default function POS({ user }) {
       const receiptRes = await orderApi.getReceipt(orderId);
       const rr = receiptRes.data?.data || receiptRes.data;
       // CRITICAL: Merge the API data with our local cart snapshot for KOT printing
-      setLastOrder({ ...or, receipt: rr, cartSnapshot: [...cart] });
-      setStep('success');
+      const updatedOrder = { ...or, receipt: rr, cartSnapshot: [...cart] };
+      setLastOrder(updatedOrder);
+      
+      // AUTO-PRINT Logic: Use a small timeout to ensure refs are updated with lastOrder content
+      setTimeout(() => {
+        console.log('[POS] Triggering Auto-Print...');
+        printReceipt({ receiptRef });
+
+        // Auto-WhatsApp if phone exists
+        if (updatedOrder.customer_phone) {
+          sendOrderToWhatsApp(updatedOrder);
+        }
+      }, 800);
+
+      setStep('select'); // Reset to menu immediately
       setCart([]);
       loadData(); // REFRESH STOCK IMMEDIATELY AFTER ORDERING
       setCustomerPhone('');
@@ -528,12 +547,6 @@ export default function POS({ user }) {
     if (!lastOrder) return;
     printReceipt({ receiptRef });
   }, [lastOrder]);
-
-  const handlePrintKOT = useCallback(() => {
-    if (!lastOrder) return;
-    printKOT({ kotRef });
-  }, [lastOrder]);
-
 
   // Hold Order Methods
   const handleHoldOrder = () => {
@@ -584,128 +597,6 @@ export default function POS({ user }) {
 
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xl select-none overflow-hidden">
-        {/* Hidden Print Templates */}
-        {/* ── Epson 80mm Premium Receipt Template ── */}
-        <div ref={receiptRef} style={{ display: 'none', width: '80mm', fontFamily: "'Inter', sans-serif" }}>
-          <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-            <div style={{ fontSize: '24px', fontWeight: '900', letterSpacing: '-1px', marginBottom: '2px' }}>ATUL ICE CREAM</div>
-            <div style={{ fontSize: '10px', fontWeight: '700', color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
-            <div style={{ fontSize: '9px', color: '#888' }}>{r.outlet?.address || 'Ahmedabad, Gujarat'}</div>
-            <div style={{ fontSize: '10px', fontWeight: '800', marginTop: '4px' }}>PH: {r.outlet?.phone || '+91 99999 99999'}</div>
-            <div style={{ fontSize: '9px', fontWeight: '700', marginTop: '2px' }}>GSTIN: {r.outlet?.gstin || '24AAAAA0000A1Z5'}</div>
-          </div>
-
-          <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: '900', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', margin: '10px 0' }}>
-            TAX INVOICE
-          </div>
-
-          <div style={{ fontSize: '10px', lineHeight: '1.5' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontWeight: '700' }}>Bill No: {lastOrder.order_number}</span>
-              <span>{lastOrder.order_type === 'dine_in' ? 'DINE-IN' : 'TAKEAWAY'}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Date: {orderDate.toLocaleDateString('en-IN')}</span>
-              <span>Time: {orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-            {lastOrder.table_number && <div style={{ fontWeight: '800' }}>TABLE: {lastOrder.table_number}</div>}
-          </div>
-
-          <div style={{ borderTop: '1px solid #000', margin: '8px 0' }}></div>
-
-          <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #000', fontWeight: '900' }}>
-                <td style={{ padding: '4px 0' }}>ITEM Description</td>
-                <td style={{ textAlign: 'center' }}>QTY</td>
-                <td style={{ textAlign: 'right' }}>AMT</td>
-              </tr>
-            </thead>
-            <tbody>
-              {(r.items || []).map((item, i) => {
-                const is100g = item.variant_name && ['100g', '100gm', '100gms', '100gram', '100grams'].includes(item.variant_name.toLowerCase().replace(/\\s/g, ''));
-                const sizeDisplay = is100g ? (item.quantity === 1 ? '1 Cup' : `${item.quantity} Cups`) : item.variant_name;
-                return (
-                <tr key={i} style={{ verticalAlign: 'top' }}>
-                  <td style={{ padding: '6px 0' }}>
-                    <div style={{ fontWeight: '800', fontSize: '12px' }}>{item.product_name}</div>
-                    {sizeDisplay && <div style={{ fontSize: '9px', color: '#555' }}>{is100g ? sizeDisplay : `Size: ${sizeDisplay}`}</div>}
-                  </td>
-                  <td style={{ textAlign: 'center', padding: '6px 0', fontWeight: '700' }}>{is100g ? `${item.quantity} - ${item.quantity === 1 ? 'Cup' : 'Cups'}` : item.variant_name ? `${item.quantity} - ${item.variant_name}` : item.quantity}</td>
-                  <td style={{ textAlign: 'right', padding: '6px 0', fontWeight: '700' }}>{Number(item.item_subtotal).toFixed(2)}</td>
-                </tr>
-              )})}
-            </tbody>
-          </table>
-
-          <div style={{ borderTop: '1px dashed #000', marginTop: '8px', paddingTop: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span>Subtotal</span>
-              <span style={{ fontWeight: '700' }}>₹{Number(r.totals?.subtotal).toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#444' }}>
-              <span>CGST (2.5%)</span>
-              <span>₹{Number(r.totals?.cgst).toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#444' }}>
-              <span>SGST (2.5%)</span>
-              <span>₹{Number(r.totals?.sgst).toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: '900', borderTop: '2px solid #000', marginTop: '10px', paddingTop: '8px', paddingBottom: '8px', borderBottom: '2px solid #000' }}>
-            <span>NET PAYABLE</span>
-            <span>₹{Number(r.totals?.total).toFixed(0)}</span>
-          </div>
-
-          <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '10px' }}>
-             <div style={{ fontWeight: '800', marginBottom: '4px' }}>THANK YOU! VISIT AGAIN</div>
-             <div style={{ color: '#666' }}>Powered by Atul POS</div>
-             <div style={{ fontSize: '8px', marginTop: '10px' }}>* Items once sold cannot be returned *</div>
-          </div>
-          <div style={{ height: '30px' }}></div> {/* Spacer for tear-off */}
-        </div>
-
-        {/* ── Epson 80mm Premium KOT Template ── */}
-        <div ref={kotRef} style={{ display: 'none', width: '80mm', fontFamily: "'Inter', sans-serif" }}>
-          <div style={{ textAlign: 'center', padding: '10px', border: '3px solid #000', marginBottom: '15px' }}>
-             <div style={{ fontSize: '28px', fontWeight: '900' }}>KOT</div>
-             <div style={{ fontSize: '14px', fontWeight: '700' }}>Order #{lastOrder.order_number?.slice(-4)}</div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '800', marginBottom: '10px' }}>
-             <span>{lastOrder.order_type === 'dine_in' ? 'DINE-IN' : 'TAKE-AWAY'}</span>
-             <span>TABLE: {lastOrder.table_number || 'STATION'}</span>
-          </div>
-
-          <div style={{ borderTop: '2px solid #000' }}></div>
-
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-             <tbody>
-              {(lastOrder.cartSnapshot || []).map((item, i) => {
-                const vName = item.variant?.name;
-                const is100g = vName && ['100g', '100gm', '100gms', '100gram', '100grams'].includes(vName.toLowerCase().replace(/\\s/g, ''));
-                const sizeDisplay = is100g ? (item.qty === 1 ? '1 Cup' : `${item.qty} Cups`) : vName;
-                return (
-                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ fontSize: '24px', fontWeight: '900', padding: '10px 0', width: '50px' }}>{item.qty}x</td>
-                  <td style={{ fontSize: '18px', fontWeight: '800', padding: '10px 0' }}>
-                    {item.product.name}
-                    {sizeDisplay && <div style={{ fontSize: '12px', fontWeight: '700', color: '#444' }}>[{sizeDisplay}]</div>}
-                  </td>
-                </tr>
-              )})}
-             </tbody>
-          </table>
-
-          <div style={{ borderTop: '2px solid #000', marginTop: '20px', paddingTop: '10px' }}>
-             <div style={{ fontSize: '12px', fontWeight: '700', textAlign: 'center' }}>
-                Time: {orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-             </div>
-          </div>
-          <div style={{ height: '50px' }}></div> {/* Spacer for tear-off */}
-        </div>
-
         <motion.div initial={{scale:0.9, opacity:0, y:20}} animate={{scale:1, opacity:1, y:0}} exit={{scale:0.9, opacity:0, y:20}}
           className="relative w-full max-w-[480px] bg-white rounded-[3.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden group">
           
@@ -730,12 +621,9 @@ export default function POS({ user }) {
               </div>
 
              <div className="space-y-4 mt-10">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <button onClick={handlePrintBill} className="bg-atul-charcoal text-white py-5 rounded-[2.2rem] font-black text-[12px] tracking-widest uppercase flex items-center justify-center gap-3 hover:translate-y-[-2px] transition-all cursor-pointer shadow-xl shadow-black/10 active:scale-95">
                     <Printer size={18}/> CUSTOMER BILL
-                  </button>
-                  <button onClick={handlePrintKOT} className="bg-white border-2 border-atul-charcoal text-atul-charcoal py-5 rounded-[2.2rem] font-black text-[12px] tracking-widest uppercase flex items-center justify-center gap-3 hover:bg-atul-charcoal hover:text-white transition-all cursor-pointer active:scale-95">
-                    <ChefHat size={18}/> PRINT KOT
                   </button>
                 </div>
                 <button onClick={handleNewOrder} className="w-full bg-atul-pink_primary text-white py-5 rounded-[2.2rem] font-black text-[12px] tracking-widest uppercase flex items-center justify-center gap-3 hover:bg-atul-pink_deep transition-all cursor-pointer shadow-xl shadow-atul-pink_primary/20 active:scale-95">
@@ -1987,14 +1875,102 @@ export default function POS({ user }) {
         {renderReviewModal()}
       </AnimatePresence>
       <AnimatePresence>
-        {renderSuccessModal()}
-      </AnimatePresence>
-      <AnimatePresence>
         {renderCalculatorModal()}
       </AnimatePresence>
       <AnimatePresence>
         {renderPhoneNumpadModal()}
       </AnimatePresence>
+
+      <PrintTemplates lastOrder={lastOrder} receiptRef={receiptRef} />
+    </div>
+  );
+};
+
+
+// ── Internal Print Content Utility Component ──────────────────────────────────
+// This component stays in the DOM so refs are always available
+const PrintTemplates = ({ lastOrder, receiptRef }) => {
+  if (!lastOrder) return null;
+  const orderDate = new Date(lastOrder.created_at || Date.now());
+  const r = lastOrder.receipt || {};
+
+  return (
+    <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', height: '0', overflow: 'hidden' }}>
+        {/* ── Epson 80mm Premium Receipt Template ── */}
+        <div ref={receiptRef} style={{ display: 'block', width: '80mm', fontFamily: "'Arial', sans-serif", background: 'white' }}>
+          {/* Safe-Zone Wrapper */}
+          <div style={{ padding: '0 4mm' }}>
+            <div style={{ textAlign: 'center', marginBottom: '15px' }}>
+              <div style={{ fontSize: '22px', fontWeight: '900', letterSpacing: '-1px', marginBottom: '2px' }}>ATUL ICE CREAM</div>
+              <div style={{ fontSize: '10px', fontWeight: '700', color: '#333', textTransform: 'uppercase' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
+              <div style={{ fontSize: '8px', color: '#666' }}>{r.outlet?.address || 'Ahmedabad, Gujarat'}</div>
+              <div style={{ fontSize: '10px', fontWeight: '800', marginTop: '4px' }}>PH: {r.outlet?.phone || '+91 99999 99999'}</div>
+              <div style={{ fontSize: '8px', fontWeight: '700' }}>GSTIN: {r.outlet?.gstin || '24AAAAA0000A1Z5'}</div>
+            </div>
+
+            <div style={{ textAlign: 'center', fontSize: '12px', fontWeight: '900', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', margin: '10px 0' }}>
+              TAX INVOICE
+            </div>
+
+            <div style={{ fontSize: '10px', lineHeight: '1.5' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: '700' }}>Bill No: {lastOrder.order_number}</span>
+                <span>{lastOrder.order_type === 'dine_in' ? 'DINE-IN' : 'TAKEAWAY'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Date: {orderDate.toLocaleDateString('en-IN')}</span>
+                <span>Time: {orderDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #000', margin: '8px 0' }}></div>
+
+            <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #000', fontWeight: '900' }}>
+                  <td style={{ padding: '4px 0' }}>ITEM</td>
+                  <td style={{ textAlign: 'center' }}>QTY</td>
+                  <td style={{ textAlign: 'right' }}>AMT</td>
+                </tr>
+              </thead>
+              <tbody>
+                {(r.items || []).map((item, i) => (
+                  <tr key={i} style={{ verticalAlign: 'top' }}>
+                    <td style={{ padding: '4px 0' }}>
+                      <div style={{ fontWeight: '800', fontSize: '11px' }}>{item.product_name}</div>
+                      {item.variant_name && <div style={{ fontSize: '8px' }}>{item.variant_name}</div>}
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '4px 0' }}>{item.quantity}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 0' }}>{Number(item.item_subtotal).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ borderTop: '1px dashed #000', marginTop: '8px', paddingTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                <span>Subtotal</span>
+                <span>₹{Number(r.totals?.subtotal).toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+                <span>Tax (GST 5%)</span>
+                <span>₹{Number(r.totals?.cgst + r.totals?.sgst).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '900', borderTop: '2px solid #000', marginTop: '10px', paddingTop: '5px', paddingBottom: '5px' }}>
+              <span>TOTAL</span>
+              <span>₹{Number(r.totals?.total).toFixed(0)}</span>
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '10px' }}>
+              <div style={{ fontWeight: '800' }}>THANK YOU!</div>
+              <div style={{ fontSize: '8px', color: '#666' }}>Items once sold cannot be returned.</div>
+            </div>
+          </div>
+          <div style={{ height: '30px' }}></div>
+        </div>
+
     </div>
   );
 };

@@ -1,6 +1,5 @@
 /**
- * Atul POS — Print Service
- * Priority: Electron → QZ Tray → iframe fallback
+ * Atul POS — Print Service (Brute Force Version)
  */
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
@@ -28,138 +27,115 @@ JmPZB4ftKeZ1s+359TrbE461++X+eXohvU37Tf5Tiv/FCWQLH0lHwaPVHGbZ90Ki
 +PLetPMn4t+X78MAP2ZD8RmKVIKEgrW3XW+VmAWE91rrY44=
 -----END CERTIFICATE-----`;
 
-// ── QZ Tray ──────────────────────────────────────────────────────────────────
-
 function loadQZScript() {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (window.qz) return resolve();
     const script = document.createElement('script');
     script.src = '/pos/qz-tray.js';
-    script.onload = resolve;
-    script.onerror = reject;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
     document.head.appendChild(script);
   });
 }
 
-let qzInitPromise = null;
-
+let isInitializing = false;
 async function isQZAvailable() {
-  if (qzInitPromise) return qzInitPromise;
-  qzInitPromise = (async () => {
-    try {
-      await loadQZScript();
-      if (!window.qz) return false;
+  if (window.qz?.websocket?.isActive()) return true;
+  if (isInitializing) {
+     // Wait for existing initialization to finish
+     let limit = 0;
+     while (isInitializing && limit < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        limit++;
+     }
+     return window.qz?.websocket?.isActive();
+  }
 
-      window.qz.security.setCertificatePromise(function(resolve) {
-        resolve(QZ_CERT);
-      });
+  isInitializing = true;
+  try {
+    console.log('[Printer] Initializing...');
+    await loadQZScript();
+    if (!window.qz) return false;
 
-      window.qz.security.setSignatureAlgorithm('SHA512');
-      window.qz.security.setSignaturePromise(function(toSign) {
-        return function(resolve) { resolve(''); };
-      });
+    // 1. Set Security
+    window.qz.security.setCertificatePromise(() => Promise.resolve(QZ_CERT));
+    window.qz.security.setSignatureAlgorithm('SHA512');
+    window.qz.security.setSignaturePromise(() => (resolve) => resolve(""));
 
-      if (!window.qz.websocket.isActive()) {
-        await window.qz.websocket.connect({ retries: 2, delay: 1 });
-      }
-      return window.qz.websocket.isActive();
-    } catch (err) {
-      console.warn('[Printer] QZ Tray not available:', err.message);
-      qzInitPromise = null;
-      return false;
+    // 2. Connect (don't await the promise as it might hang)
+    if (!window.qz.websocket.isActive()) {
+       window.qz.websocket.connect({ retries: 2, delay: 1 });
+       
+       // Manually wait for connection
+       let wait = 0;
+       while (!window.qz.websocket.isActive() && wait < 40) {
+          await new Promise(r => setTimeout(r, 100));
+          wait++;
+       }
     }
-  })();
-  return qzInitPromise;
+
+    console.log('[Printer] Status:', window.qz.websocket.isActive() ? 'Connected' : 'Failed');
+    return window.qz.websocket.isActive();
+  } catch (err) {
+    console.warn('[Printer] Connection error');
+    return false;
+  } finally {
+    isInitializing = false;
+  }
 }
 
-async function printViaQZ(htmlContent) {
-  const printers = await window.qz.printers.find('EPSON').catch(() => []);
-  const printerName = (printers && printers.length > 0)
-    ? (Array.isArray(printers) ? printers[0] : printers)
-    : await window.qz.printers.getDefault();
-
-  if (!printerName) throw new Error('No printer found');
-
-  const config = window.qz.configs.create(printerName);
-  const data = [{
-    type: 'pixel',
-    format: 'html',
-    flavor: 'plain',
-    data: `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>@page{margin:0;size:80mm auto;}body{margin:0;padding:0;font-family:Arial,sans-serif;width:80mm;}</style></head><body>${htmlContent}</body></html>`
-  }];
-  await window.qz.print(config, data);
-  console.log('[Printer] QZ Tray print sent.');
-}
-
-// ── iframe fallback ───────────────────────────────────────────────────────────
-
-function printViaIframe(htmlContent) {
-  return new Promise((resolve) => {
-    const fullHtml = `<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8"/>
-    <style>
-      @page { margin: 0; size: 80mm auto; }
-      body { margin: 0; padding: 0; font-family: 'Inter', Arial, sans-serif; width: 80mm; }
-    </style>
-  </head>
-  <body>${htmlContent}</body>
-</html>`;
-    const blob = new Blob([fullHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.top = '-9999px';
-    iframe.style.left = '-9999px';
-    iframe.style.width = '80mm';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    iframe.src = url;
-    iframe.onload = () => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-        URL.revokeObjectURL(url);
-        resolve();
-      }, 1500);
-    };
-    document.body.appendChild(iframe);
-  });
-}
-
-// ── Main ─────────────────────────────────────────────────────────────────────
+let printQueue = Promise.resolve();
 
 async function doPrint(html) {
   if (!html) return;
-
-  if (isElectron) {
-    try {
-      await fetch('http://127.0.0.1:9191/print', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html, deviceName: 'EPSON TM-T82 Receipt' }),
-      });
-    } catch (e) {
-      console.error('[Printer] Electron print failed:', e);
-    }
-    return;
-  }
-
-  const qzOk = await isQZAvailable();
-  if (qzOk) {
-    try {
-      await printViaQZ(html);
+  
+  // Add to queue to prevent concurrent attempts
+  printQueue = printQueue.then(async () => {
+    console.log('[Printer] Processing item...');
+    
+    if (isElectron) {
+      try {
+        await fetch('http://127.0.0.1:9191/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html, deviceName: 'EPSON TM-T82 Receipt' }),
+        });
+      } catch (e) {}
       return;
-    } catch (err) {
-      console.warn('[Printer] QZ print failed, falling back to iframe:', err.message);
     }
-  }
 
-  await printViaIframe(html);
+    const ok = await isQZAvailable();
+    if (ok) {
+        try {
+            const printers = await window.qz.printers.find('EPSON').catch(() => []);
+            const printerName = (printers && (Array.isArray(printers) ? printers.length > 0 : printers))
+                ? (Array.isArray(printers) ? printers[0] : printers)
+                : await window.qz.printers.getDefault();
+            
+            if (printerName) {
+                const config = window.qz.configs.create(printerName);
+                const data = [{
+                   type: 'pixel', format: 'html', flavor: 'plain',
+                   data: `<!DOCTYPE html><html><body><style>@page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 0; font-family: Arial; width: 80mm; font-size: 14px; }</style>${html}</body></html>`
+                }];
+                await window.qz.print(config, data);
+                console.log('[Printer] Printed successfully');
+                return;
+            }
+        } catch (e) { console.warn('[Printer] QZ Print failed'); }
+    }
+
+    // Iframe Fallback
+    console.log('[Printer] Falling back to browser print');
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed'; iframe.style.visibility = 'hidden';
+    iframe.srcdoc = `<html><body onload="window.print();">${html}</body></html>`;
+    document.body.appendChild(iframe);
+    setTimeout(() => document.body.removeChild(iframe), 2000);
+  });
+  
+  return printQueue;
 }
 
 const getRefHtml = (ref) => ref?.current?.innerHTML || '';
 export const printReceipt = ({ receiptRef }) => doPrint(getRefHtml(receiptRef));
-export const printKOT = ({ kotRef }) => doPrint(getRefHtml(kotRef));
