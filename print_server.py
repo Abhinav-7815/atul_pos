@@ -18,6 +18,9 @@ import win32print
 import json
 import os
 import sys
+import socket
+import subprocess
+import time
 
 app = Flask(__name__)
 
@@ -300,6 +303,72 @@ def print_receipt():
         return jsonify({"error": str(e)}), 500
 
 
+def is_port_in_use(port: int) -> bool:
+    """Check karo ki port already occupied hai ya nahi."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        try:
+            s.connect(("127.0.0.1", port))
+            return True
+        except (ConnectionRefusedError, socket.timeout, OSError):
+            return False
+
+
+def get_pid_on_port(port: int) -> int | None:
+    """netstat se us port pe kaun sa PID listen kar raha hai, woh dhundo."""
+    try:
+        result = subprocess.check_output(
+            ["netstat", "-ano"],
+            text=True, stderr=subprocess.DEVNULL
+        )
+        for line in result.splitlines():
+            # Match LISTENING state on our port
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.split()
+                if parts:
+                    try:
+                        return int(parts[-1])
+                    except ValueError:
+                        pass
+    except Exception:
+        pass
+    return None
+
+
+def ensure_port_free(port: int):
+    """Agar port busy hai to puraane process ko kill karo."""
+    if not is_port_in_use(port):
+        return  # Port free hai, kuch karna nahi
+
+    print(f"[!] Port {port} already in use — puraana instance dhundh raha hoon...")
+    pid = get_pid_on_port(port)
+
+    if pid is None:
+        print(f"[!] PID nahi mila. Manually port {port} free karo aur dobara try karo.")
+        sys.exit(1)
+
+    print(f"[!] PID {pid} port {port} pe chal raha hai — kill kar raha hoon...")
+    try:
+        subprocess.check_call(
+            ["taskkill", "/PID", str(pid), "/F"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        print(f"[OK] PID {pid} successfully terminate ho gaya.")
+    except subprocess.CalledProcessError:
+        print(f"[ERROR] PID {pid} ko kill nahi kar paaya. Admin rights se run karo.")
+        sys.exit(1)
+
+    # Port free hone ka wait karo
+    for _ in range(10):
+        time.sleep(0.5)
+        if not is_port_in_use(port):
+            print(f"[OK] Port {port} ab free hai.\n")
+            return
+
+    print(f"[ERROR] Port {port} abhi bhi busy hai. Manually restart karo.")
+    sys.exit(1)
+
+
 if __name__ == "__main__":
     # ── First-run: printer select karo ──────────────────────────
     if not os.path.exists(CONFIG_FILE):
@@ -329,6 +398,9 @@ if __name__ == "__main__":
         else:
             print("[Warning] Koi printer nahi mila, default use ho raha hai.")
         print("="*50 + "\n")
+
+    # ── Port conflict resolve karo before starting Flask ────────
+    ensure_port_free(9191)
 
     print(f"[Atul Print Server] Starting on http://127.0.0.1:9191")
     print(f"[Atul Print Server] Printer: {PRINTER_NAME}")

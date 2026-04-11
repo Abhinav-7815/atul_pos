@@ -77,3 +77,15 @@ memory.json
 # Logs
 *.log
 logs/
+
+# Local printer config (machine-specific)
+printer_config.json
+
+# Electron build output
+frontend/dist_electron/
+frontend/dist_electron2/
+frontend/build/
+
+# PyInstaller
+frontend/print_server.exe
+frontend/*.spec
