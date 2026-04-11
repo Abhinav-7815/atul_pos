@@ -1,36 +1,54 @@
 /**
  * Atul POS — Print Service
  *
- * Priority order:
- *  1. Local Print Server (localhost:9191) — Python Flask ya Electron, koi dialog nahi
- *  2. QZ Tray — agar print server nahi chal raha
- *  3. Browser window.print() — last fallback (dialog aata hai)
+ * Electron EXE mein:
+ *   → Python print_server.exe port 9192 pe chal raha hota hai
+ *   → Seedha 9192 pe JSON bhejo → win32print → EPSON TM-T82
+ *
+ * Browser mein:
+ *   → QZ Tray try karo → fallback browser print dialog
  */
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
-const PRINT_SERVER = 'http://127.0.0.1:9191';
 
-// ─── LOCAL PRINT SERVER (Python Flask / Electron) ──────────────────────────
+// Python print_server.exe (Electron EXE ke saath bundle hota hai)
+const PYTHON_PRINT_SERVER = 'http://127.0.0.1:9192';
 
-async function isPrintServerAvailable() {
+// Printer name — localStorage se lo, fallback EPSON default
+function getPrinterName() {
   try {
-    const res = await fetch(`${PRINT_SERVER}/health`, { signal: AbortSignal.timeout(800) });
+    return localStorage.getItem('atul_printer_name') || 'EPSON TM-T82 Receipt';
+  } catch {
+    return 'EPSON TM-T82 Receipt';
+  }
+}
+
+// ─── PYTHON PRINT SERVER ───────────────────────────────────────────────────
+
+async function isPythonServerAvailable() {
+  try {
+    const res = await fetch(`${PYTHON_PRINT_SERVER}/health`, {
+      signal: AbortSignal.timeout(1000)
+    });
     return res.ok;
   } catch {
     return false;
   }
 }
 
-async function sendToPrintServer(payload) {
-  const res = await fetch(`${PRINT_SERVER}/print`, {
+async function sendToPythonServer(payload, printerName) {
+  const res = await fetch(`${PYTHON_PRINT_SERVER}/print`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Printer-Name': printerName || '',
+    },
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-// ─── QZ TRAY ───────────────────────────────────────────────────────────────
+// ─── QZ TRAY (browser fallback) ────────────────────────────────────────────
 
 const QZ_CERT = `-----BEGIN CERTIFICATE-----
 MIIDrzCCApegAwIBAgIUTG3P1A4i9+RRqAGLTpFC4jQcUQMwDQYJKoZIhvcNAQEL
@@ -77,12 +95,10 @@ async function isQZAvailable() {
     }
     return window.qz?.websocket?.isActive();
   }
-
   isInitializing = true;
   try {
     await loadQZScript();
     if (!window.qz) return false;
-
     window.qz.security.setCertificatePromise(() => Promise.resolve(QZ_CERT));
     window.qz.security.setSignatureAlgorithm('SHA512');
     window.qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
@@ -98,7 +114,6 @@ async function isQZAvailable() {
         })
         .catch(reject);
     });
-
     if (!window.qz.websocket.isActive()) {
       window.qz.websocket.connect({ retries: 2, delay: 1 });
       let wait = 0;
@@ -123,12 +138,8 @@ async function printViaQZ(html) {
     const printerName = (Array.isArray(printers) ? printers[0] : printers)
       || await window.qz.printers.getDefault();
     if (!printerName) return false;
-
     const config = window.qz.configs.create(printerName);
     config.setMargins(0);
-    config.setDensity(203);
-    config.setUnits('mm');
-
     await window.qz.print(config, [{
       type: 'pixel', format: 'html', flavor: 'plain',
       options: { pageWidth: 58, pageHeight: 200, renderDensity: 203, centerImage: true },
@@ -142,39 +153,57 @@ async function printViaQZ(html) {
   }
 }
 
-// ─── MAIN PRINT LOGIC ──────────────────────────────────────────────────────
+// ─── PRINT QUEUE ───────────────────────────────────────────────────────────
 
 let printQueue = Promise.resolve();
 
 /**
- * HTML receipt print karo.
- * Flow: Print Server → QZ Tray → browser fallback
+ * ESC/POS structured print — Python print_server.exe ko bhejo.
+ * Electron EXE mein seedha port 9192 pe jaata hai.
  */
-async function doPrint(html) {
+export async function printOrderEscPos(orderData, printerName) {
+  if (!orderData) return;
+
+  const printer = printerName || getPrinterName();
+
+  printQueue = printQueue.then(async () => {
+    // 1. Python server (Electron EXE ke andar print_server.exe)
+    try {
+      const available = await isPythonServerAvailable();
+      if (available) {
+        const result = await sendToPythonServer(orderData, printer);
+        if (result.success) {
+          console.log('[Printer] OK via Python win32print:', result.method);
+          return;
+        }
+        console.warn('[Printer] Python server error:', result.error);
+      }
+    } catch (e) {
+      console.warn('[Printer] Python server error:', e.message);
+    }
+
+    console.warn('[Printer] Python server nahi mila — browser fallback');
+  });
+
+  return printQueue;
+}
+
+/**
+ * HTML receipt print — browser/QZ fallback.
+ */
+export async function printReceipt({ receiptRef }) {
+  const html = receiptRef?.current?.innerHTML;
   if (!html) return;
 
   printQueue = printQueue.then(async () => {
-    // 1. Local print server (Python Flask ya Electron) — no dialog
-    const serverUp = await isPrintServerAvailable();
-    if (serverUp) {
-      try {
-        const result = await sendToPrintServer({ html });
-        if (result.success) {
-          console.log('[Printer] OK via local print server');
-          return;
-        }
-      } catch { /* fall through */ }
-    }
-
-    // 2. QZ Tray
-    console.log('[Printer] Print server nahi mila, QZ Tray try kar raha hun...');
+    // QZ Tray try karo
     const qzOk = await printViaQZ(html);
     if (qzOk) {
       console.log('[Printer] OK via QZ Tray');
       return;
     }
 
-    // 3. Browser fallback (dialog aayega)
+    // Browser dialog fallback
     console.log('[Printer] Fallback: browser print dialog');
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
@@ -182,40 +211,6 @@ async function doPrint(html) {
     iframe.srcdoc = `<html><body onload="window.print();">${html}</body></html>`;
     document.body.appendChild(iframe);
     setTimeout(() => document.body.removeChild(iframe), 3000);
-  });
-
-  return printQueue;
-}
-
-// ─── EXPORTS ───────────────────────────────────────────────────────────────
-
-const getRefHtml = (ref) => ref?.current?.innerHTML || '';
-
-/** POS.jsx se call hota hai — HTML ref se print */
-export const printReceipt = ({ receiptRef }) => doPrint(getRefHtml(receiptRef));
-
-/**
- * ESC/POS structured JSON print (Django receipt data).
- * Print server ko raw JSON bhejta hai — server ESC/POS bytes banata hai.
- * Agar server nahi chal raha to HTML fallback.
- */
-export async function printOrderEscPos(orderData) {
-  if (!orderData) return;
-
-  printQueue = printQueue.then(async () => {
-    const serverUp = await isPrintServerAvailable();
-    if (serverUp) {
-      try {
-        // No 'html' field → print_server.py ESC/POS path use karega
-        const result = await sendToPrintServer(orderData);
-        if (result.success) {
-          console.log('[Printer] ESC/POS OK via print server:', result.printer || '');
-          return;
-        }
-      } catch { /* fall through */ }
-    }
-
-    console.warn('[Printer] ESC/POS print server nahi mila — QZ/browser fallback nahi kaam karega bina HTML ke');
   });
 
   return printQueue;

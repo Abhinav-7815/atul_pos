@@ -76,11 +76,14 @@ def _build_receipt_payload(order: Order) -> dict:
 
     items_data = []
     for item in order.items.all():
+        # unit_label: variant name se lo (e.g. "1 Cup", "200 Gms")
+        unit_label = item.variant.name if item.variant else "pc(s)"
         items_data.append({
             "product_name": item.product.name,
-            "quantity": float(item.quantity),
-            "unit_price": float(item.unit_price),
-            "item_total": float(item.item_total),
+            "unit_label":   unit_label,
+            "quantity":     float(item.quantity),
+            "unit_price":   float(item.unit_price),
+            "item_total":   float(item.item_total),
         })
 
     return {

@@ -507,17 +507,9 @@ export default function POS({ user }) {
       const updatedOrder = { ...or, receipt: rr, cartSnapshot: [...cart] };
       setLastOrder(updatedOrder);
       
-      // AUTO-PRINT: Electron mein ESC/POS raw bytes (no dialog), bahar QZ/browser fallback
-      const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
-      if (isElectron) {
-        console.log('[POS] Electron ESC/POS Auto-Print...');
-        printOrderEscPos(rr);  // rr = receipt data from API
-      } else {
-        setTimeout(() => {
-          console.log('[POS] Browser Auto-Print...');
-          printReceipt({ receiptRef });
-        }, 800);
-      }
+      // AUTO-PRINT: Pehle Python server (9192) try karo — Electron ho ya browser
+      // Agar print_server.py locally chal raha hai to seedha ESC/POS print hoga
+      printOrderEscPos(rr);
 
       // Auto-WhatsApp if phone exists
       if (updatedOrder.customer_phone) {
@@ -551,7 +543,12 @@ export default function POS({ user }) {
 
   const handlePrintBill = useCallback(() => {
     if (!lastOrder) return;
-    printReceipt({ receiptRef });
+    const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
+    if (isElectron && lastOrder.receipt) {
+      printOrderEscPos(lastOrder.receipt);
+    } else {
+      printReceipt({ receiptRef });
+    }
   }, [lastOrder]);
 
   // Hold Order Methods

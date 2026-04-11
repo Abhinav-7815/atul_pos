@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -212,9 +212,13 @@ export default function App() {
     localStorage.removeItem('refresh_token');
   };
 
+  const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
+  const Router = isElectron ? HashRouter : BrowserRouter;
+  const routerProps = isElectron ? {} : { basename: "/pos" };
+
   return (
-    <BrowserRouter basename="/pos">
+    <Router {...routerProps}>
        <AppContent user={user} setUser={setUser} handleLogin={handleLogin} handleLogout={handleLogout} />
-    </BrowserRouter>
+    </Router>
   );
 }

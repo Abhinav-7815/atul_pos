@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = '/api/v1';
+// Electron mein file:// protocol hota hai — absolute URL chahiye
+const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
+const API_URL = isElectron ? 'https://atulicecream.com/api/v1' : '/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
