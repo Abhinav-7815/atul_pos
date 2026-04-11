@@ -68,7 +68,8 @@ async function isQZAvailable() {
       })
         .then(r => r.json())
         .then(data => {
-          if (data.signature) resolve(data.signature);
+          const sig = data.signature || data?.data?.signature;
+          if (sig) resolve(sig);
           else reject('Signing failed');
         })
         .catch(reject);
@@ -127,9 +128,20 @@ async function doPrint(html) {
             if (printerName) {
                 const config = window.qz.configs.create(printerName);
                 
+                // FORCE EXPLICIT UNITS AND DENSITY
+                config.setMargins(0);
+                config.setDensity(203); // Standard for thermal printers
+                config.setUnits('mm');
+                
                 const data = [{
                    type: 'pixel', format: 'html', flavor: 'plain',
-                   data: `<!DOCTYPE html><html><body style="margin:0;padding:0;"><style>@page { margin: 0; size: auto; } body { font-family: Arial, sans-serif; width: 100%; }</style>${html}</body></html>`
+                   options: { 
+                     pageWidth: 58, 
+                     pageHeight: 200, 
+                     renderDensity: 203,
+                     centerImage: true 
+                   },
+                   data: `<!DOCTYPE html><html><body style="margin:0;padding:0;"><style>@page { margin: 0; size: 58mm auto; } body { font-family: Arial, sans-serif; width: 48mm; }</style>${html}</body></html>`
                 }];
                 await window.qz.print(config, data);
                 console.log('[Printer] Printed successfully');
