@@ -12,7 +12,7 @@ import {
 import { menuApi, orderApi } from '../services/api';
 import { inventoryApi } from '../services/api';
 import { offlineService } from '../services/offline';
-import { printReceipt, printOrderEscPos } from '../services/printer';
+import { printReceipt } from '../services/printer';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Fullscreen } from 'lucide-react';
@@ -521,7 +521,9 @@ export default function POS({ user }) {
 
     setIsSubmitting(true);
     try {
-      const response = await orderApi.createOrder(orderData);
+      const response = user
+        ? await orderApi.createOrder(orderData)
+        : await orderApi.publicCreateOrder({ ...orderData, outlet_id: localStorage.getItem('atul_pos_outlet_id') || undefined });
       const or = response.data?.data || response.data;
       
       // Get receipt data from API, but if MISSING, reconstruct it from what we just sent!
@@ -1772,16 +1774,7 @@ export default function POS({ user }) {
         </div>
         
         {/* ── Advanced Product Manager Strip ── */}
-        <AnimatePresence>
-          {posConfig.showAdvancedManager && (
-            <motion.div
-              initial={{ y: 80, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 80, opacity: 0 }}
-              transition={{ type: 'spring', damping: 24, stiffness: 200 }}
-              className="shrink-0 bg-white border-t border-gray-100 shadow-[0_-12px_40px_rgba(0,0,0,0.05)] z-50 overflow-hidden"
-              style={{ height: 172 }}
-            >
+        <div className="shrink-0 bg-white border-t border-gray-100 shadow-[0_-12px_40px_rgba(0,0,0,0.05)] z-50 overflow-hidden" style={{ height: 172 }}>
               {/* Strip header */}
               <div className="px-5 py-1.5 flex items-center justify-between border-b border-gray-50 bg-gradient-to-r from-atul-pink_soft/10 to-transparent">
                 <div className="flex items-center gap-2">
@@ -1955,9 +1948,7 @@ export default function POS({ user }) {
                   </div>
                 </motion.div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </div>
       </main>
 
 

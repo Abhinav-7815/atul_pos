@@ -26,11 +26,20 @@ import { cn } from './lib/utils';
 
 // ── Build sidebar nav items based on logged-in user's outlet type ──────────
 function getNavItems(user) {
-  const role = user?.role;
-  const isSuperAdmin = role === 'superadmin';
-
   // Load visibility config
   const navConfig = JSON.parse(localStorage.getItem('atul_pos_nav_config') || '{}');
+
+  if (!user) {
+    // For unauthenticated users, only show Billing POS if it's enabled
+    const items = [];
+    if (navConfig.pos_visible ?? true) {
+      items.push({ id: 'billing', label: 'Billing POS', icon: 'point_of_sale' });
+    }
+    return items;
+  }
+
+  const role = user?.role;
+  const isSuperAdmin = role === 'superadmin';
 
   const navItems = [];
 
@@ -44,6 +53,7 @@ function getNavItems(user) {
   addIfEnabled('billing', 'Billing POS', 'point_of_sale', 'pos_visible');
   addIfEnabled('menu', 'Catalog', 'restaurant_menu', 'menu_visible');
   addIfEnabled('inventory', 'Inventory', 'inventory_2', 'inventory_visible');
+  addIfEnabled('customers', 'Customers', 'group', 'customers_visible');
   addIfEnabled('reports', 'Reports', 'analytics', 'reports_visible');
 
   if (isSuperAdmin || (navConfig.settings_visible ?? true)) {
@@ -182,14 +192,19 @@ function AppContent({ user, setUser, handleLogin, handleLogout }) {
     return false;
   };
 
+  // Public routes that don't require login
+  const PUBLIC_PATHS = ['/', '/billing'];
+
   if (!user) {
-    if (location.pathname !== '/login') {
-       return <Navigate to="/login" replace />;
+    if (location.pathname === '/login') {
+      return <Login onLoginSuccess={handleLogin} />;
     }
-    return <Login onLoginSuccess={handleLogin} />;
+    if (!PUBLIC_PATHS.includes(location.pathname)) {
+      return <Navigate to="/login" replace />;
+    }
   }
 
-  if (location.pathname === '/login') {
+  if (user && location.pathname === '/login') {
      return <Navigate to="/billing" replace />;
   }
 
@@ -197,7 +212,7 @@ function AppContent({ user, setUser, handleLogin, handleLogout }) {
     <div className="flex h-screen bg-[#FDF3F6] font-sans overflow-hidden">
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-50 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuAVBbRsaGYdCe_s-o8jqR9nJa_mthPmgAh0wURjtR78rPPofw-FjgEVlP1a1SZjvP5_caDNAiFJJn4T_HK9JUWMEfkCyowgFI_MqspIP1CiFvv4IkiRmENXYRPX2MJCCSMAUcVWDzEqcD_U9h0oktywI8neBaej-LZcAsDIlyxN_NCMyHtrhQTsnCyKKIQukpRURHFV5IO__JP1DVelhVWW2Q3SMKqacV1bSoLJ9a2d_4I_5RC5cvOn6mS-xtg64rCTeLnGVsCMyzI')]"></div>
 
-      {!(activeTab === 'billing' && isFullscreen) && (
+      {!(activeTab === 'billing' && isFullscreen) && location.pathname !== '/login' && (
         <aside className="w-[220px] fixed h-screen border-r border-white/50 flex flex-col z-20 bg-transparent">
           <div className="p-6 flex items-center gap-2">
             <div className="size-9 bg-atul-pink_primary rounded-full shadow-sm flex items-center justify-center text-white">
@@ -236,30 +251,43 @@ function AppContent({ user, setUser, handleLogin, handleLogout }) {
           </nav>
 
           <div className="pb-6 px-4 space-y-2">
-            <div className="flex items-center gap-2.5 p-1.5 bg-[#F8E2EB]/50 backdrop-blur-sm border border-white/40 rounded-[2rem] shadow-sm">
-              <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'Atul Admin')}&background=D63384&color=fff&bold=true`} className="size-9 rounded-full object-cover border-2 border-white shadow-sm" alt="User" />
-               <div className="flex flex-col min-w-0 pr-2">
-                  <span className="text-[12px] font-bold text-atul-charcoal tracking-tight truncate">{user.full_name || 'System Admin'}</span>
-                  <span className="text-[9px] uppercase font-bold text-atul-pink_primary/60 tracking-wider truncate">{user.outlet_name || 'Main Outlet'}</span>
-               </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={handleLogout} className="flex-1 bg-red-50 hover:bg-red-100 text-red-500 py-2.5 rounded-xl border border-red-100 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider">
-                <MaterialIcon name="logout" className="text-[16px]" />
-                <span>Log Out</span>
+            {user ? (
+              <>
+                <div className="flex items-center gap-2.5 p-1.5 bg-[#F8E2EB]/50 backdrop-blur-sm border border-white/40 rounded-[2rem] shadow-sm">
+                  <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name || 'Atul Admin')}&background=D63384&color=fff&bold=true`} className="size-9 rounded-full object-cover border-2 border-white shadow-sm" alt="User" />
+                   <div className="flex flex-col min-w-0 pr-2">
+                      <span className="text-[12px] font-bold text-atul-charcoal tracking-tight truncate">{user.full_name || 'System Admin'}</span>
+                      <span className="text-[9px] uppercase font-bold text-atul-pink_primary/60 tracking-wider truncate">{user.outlet_name || 'Main Outlet'}</span>
+                   </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleLogout} className="flex-1 bg-red-50 hover:bg-red-100 text-red-500 py-2.5 rounded-xl border border-red-100 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                    <MaterialIcon name="logout" className="text-[16px]" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button 
+                onClick={() => navigate('/login')} 
+                className="w-full bg-atul-pink_primary text-white py-4 rounded-2xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-atul-pink_primary/20 hover:bg-atul-pink_deep transition-all"
+              >
+                <MaterialIcon name="login" className="text-[18px]" />
+                <span>Login Workspace</span>
               </button>
-            </div>
+            )}
           </div>
         </aside>
       )}
 
       <PinModal isOpen={isPinModalOpen} onClose={() => setIsPinModalOpen(false)} onConfirm={handlePinSwitch} title="Cashier Swap" />
 
-      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", !(activeTab === 'billing' && isFullscreen) ? "ml-[220px]" : "ml-0")}>
+      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", (!(activeTab === 'billing' && isFullscreen) && location.pathname !== '/login') ? "ml-[220px]" : "ml-0")}>
          <Routes>
             <Route path="/billing" element={<POS user={user} />} />
             <Route path="/menu" element={<Menu user={user} />} />
             <Route path="/inventory" element={<Inventory user={user} />} />
+            <Route path="/customers" element={<Customers user={user} />} />
             <Route path="/reports" element={<Reports user={user} />} />
             <Route path="/settings" element={<Settings user={user} onUpdateUser={(newOutlet) => setUser(prev => ({...prev, outlet_name: newOutlet.name}))} />} />
             {/* Catch all / fallback */}
@@ -275,11 +303,19 @@ export default function App() {
   const Router = isElectron ? HashRouter : BrowserRouter;
   const routerProps = isElectron ? {} : { basename: import.meta.env.DEV ? "/" : "/pos" };
 
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
+  const [user, setUser] = useState(() => {
+    const u = JSON.parse(localStorage.getItem('user'));
+    if (u?.outlet_id) localStorage.setItem('atul_pos_outlet_id', u.outlet_id);
+    return u;
+  });
 
   const handleLogin = (userData) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    // Store outlet_id for public order creation
+    if (userData?.outlet_id) {
+      localStorage.setItem('atul_pos_outlet_id', userData.outlet_id);
+    }
   };
 
   const handleLogout = () => {

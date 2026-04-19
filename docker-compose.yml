@@ -14,10 +14,16 @@ services:
       - ./db.sqlite3:/app/db.sqlite3
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.atul-pos-backend.entrypoints=websecure"
-      - "traefik.http.routers.atul-pos-backend.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/api/`)"
-      - "traefik.http.routers.atul-pos-backend.tls=true"
-      - "traefik.http.routers.atul-pos-backend.tls.certresolver=letsencrypt"
+      # HTTPS Router
+      - "traefik.http.routers.atul-pos-backend-secure.entrypoints=websecure"
+      - "traefik.http.routers.atul-pos-backend-secure.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.atul-pos-backend-secure.tls=true"
+      - "traefik.http.routers.atul-pos-backend-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.atul-pos-backend-secure.service=atul-pos-backend"
+      # HTTP Router (Allow Non-Secure)
+      - "traefik.http.routers.atul-pos-backend-http.entrypoints=web"
+      - "traefik.http.routers.atul-pos-backend-http.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.atul-pos-backend-http.service=atul-pos-backend"
       - "traefik.http.services.atul-pos-backend.loadbalancer.server.port=8000"
     restart: always
 
@@ -30,9 +36,15 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.atul-pos-frontend.entrypoints=websecure"
-      - "traefik.http.routers.atul-pos-frontend.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/pos/`)"
-      - "traefik.http.routers.atul-pos-frontend.tls=true"
-      - "traefik.http.routers.atul-pos-frontend.tls.certresolver=letsencrypt"
+      # HTTPS Router
+      - "traefik.http.routers.atul-pos-frontend-secure.entrypoints=websecure"
+      - "traefik.http.routers.atul-pos-frontend-secure.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/pos/`)"
+      - "traefik.http.routers.atul-pos-frontend-secure.tls=true"
+      - "traefik.http.routers.atul-pos-frontend-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.atul-pos-frontend-secure.service=atul-pos-frontend"
+      # HTTP Router (Allow Non-Secure)
+      - "traefik.http.routers.atul-pos-frontend-http.entrypoints=web"
+      - "traefik.http.routers.atul-pos-frontend-http.rule=(Host(`atulicecream.com`) || Host(`www.atulicecream.com`)) && PathPrefix(`/pos/`)"
+      - "traefik.http.routers.atul-pos-frontend-http.service=atul-pos-frontend"
       - "traefik.http.services.atul-pos-frontend.loadbalancer.server.port=80"
     restart: always

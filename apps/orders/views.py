@@ -11,6 +11,75 @@ from decimal import Decimal
 import threading
 import requests as http_requests
 
+
+# ─── AUTO-PRINT HELPER ────────────────────────────────────────────────────────
+
+PRINT_SERVER_URL = "http://127.0.0.1:9191/print"
+
+def _build_receipt_payload(order: Order) -> dict:
+    """Order object se print server ke liye JSON payload banata hai."""
+    from .serializers import OrderItemSerializer, PaymentSerializer
+
+    cgst = order.tax_amount / 2
+    sgst = order.tax_amount / 2
+
+    items_data = []
+    for item in order.items.all():
+        # unit_label: variant name se lo (e.g. "1 Cup", "200 Gms")
+        raw_label = item.variant.name if item.variant else "pc(s)"
+        # 100gm/100gms = 1 Cup (ice cream cup serving)
+        _norm = raw_label.lower().replace(' ', '').replace('.', '')
+        if _norm in ('100gm', '100gms', '100gram', '100grams', '100g'):
+            unit_label = '1 Cup'
+        else:
+            unit_label = raw_label
+        items_data.append({
+            "product_name": item.product.name,
+            "unit_label":   unit_label,
+            "quantity":     float(item.quantity),
+            "unit_price":   float(item.unit_price),
+            "item_total":   float(item.item_total),
+        })
+
+    return {
+        "outlet": {
+            "name":    order.outlet.name,
+            "address": order.outlet.address or "",
+            "phone":   order.outlet.phone or "",
+            "gstin":   order.outlet.gstin or "",
+        },
+        "order_number": order.order_number,
+        "date":         order.created_at.isoformat(),
+        "cashier":      order.created_by.full_name if order.created_by else "",
+        "order_type":   order.order_type,
+        "items":        items_data,
+        "totals": {
+            "subtotal": float(order.subtotal),
+            "cgst":     float(cgst),
+            "sgst":     float(sgst),
+            "discount": float(order.discount_amount),
+            "total":    float(order.total_amount),
+        },
+    }
+
+
+def _trigger_auto_print(order: Order):
+    """Background thread: print server ko call karta hai."""
+    try:
+        payload = _build_receipt_payload(order)
+        resp = http_requests.post(PRINT_SERVER_URL, json=payload, timeout=5)
+        if resp.status_code == 200:
+            print(f"[AutoPrint] OK — {order.order_number}")
+        else:
+            print(f"[AutoPrint] Server error {resp.status_code} — {order.order_number}")
+    except http_requests.exceptions.ConnectionError:
+        print(f"[AutoPrint] Print server not running (skipped) — {order.order_number}")
+    except Exception as e:
+        print(f"[AutoPrint] Failed — {order.order_number}: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.none()
     serializer_class = OrderSerializer
@@ -169,67 +238,44 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Auto-print: background thread mein chalao taaki response delay na ho
         threading.Thread(target=_trigger_auto_print, args=(order,), daemon=True).start()
 
+    @action(detail=False, methods=['post'], url_path='public_create', permission_classes=[permissions.AllowAny])
+    def public_create(self, request):
+        """
+        Public order creation — no login required.
+        Accepts same payload as normal order creation.
+        Requires 'outlet_id' in body (UUID). Falls back to first active outlet.
+        """
+        from apps.outlets.models import Outlet
 
-# ─── AUTO-PRINT HELPER ────────────────────────────────────────────────────────
+        data = request.data.copy()
+        outlet_id = data.get('outlet_id') or data.get('outlet')
 
-PRINT_SERVER_URL = "http://127.0.0.1:9191/print"
+        # Resolve outlet
+        try:
+            if outlet_id:
+                outlet = Outlet.objects.get(pk=outlet_id)
+            else:
+                outlet = Outlet.objects.filter(is_active=True).order_by('created_at').first()
+            if not outlet:
+                return Response({"error": "No outlet found."}, status=status.HTTP_400_BAD_REQUEST)
+        except Outlet.DoesNotExist:
+            return Response({"error": "Invalid outlet_id."}, status=status.HTTP_400_BAD_REQUEST)
 
-def _build_receipt_payload(order: Order) -> dict:
-    """Order object se print server ke liye JSON payload banata hai."""
-    from .serializers import OrderItemSerializer, PaymentSerializer
+        # Remove outlet from data (will be injected via serializer context)
+        data.pop('outlet_id', None)
+        data.pop('outlet', None)
 
-    cgst = order.tax_amount / 2
-    sgst = order.tax_amount / 2
+        # Use a fake anonymous request context for serializer
+        serializer = OrderSerializer(data=data, context={'request': request, 'outlet': outlet})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    items_data = []
-    for item in order.items.all():
-        # unit_label: variant name se lo (e.g. "1 Cup", "200 Gms")
-        unit_label = item.variant.name if item.variant else "pc(s)"
-        items_data.append({
-            "product_name": item.product.name,
-            "unit_label":   unit_label,
-            "quantity":     float(item.quantity),
-            "unit_price":   float(item.unit_price),
-            "item_total":   float(item.item_total),
-        })
+        order = serializer.save(outlet=outlet, created_by=None)
 
-    return {
-        "outlet": {
-            "name":    order.outlet.name,
-            "address": order.outlet.address or "",
-            "phone":   order.outlet.phone or "",
-            "gstin":   order.outlet.gstin or "",
-        },
-        "order_number": order.order_number,
-        "date":         order.created_at.isoformat(),
-        "cashier":      order.created_by.full_name if order.created_by else "",
-        "order_type":   order.order_type,
-        "items":        items_data,
-        "totals": {
-            "subtotal": float(order.subtotal),
-            "cgst":     float(cgst),
-            "sgst":     float(sgst),
-            "discount": float(order.discount_amount),
-            "total":    float(order.total_amount),
-        },
-    }
+        # Auto-print
+        threading.Thread(target=_trigger_auto_print, args=(order,), daemon=True).start()
 
-
-def _trigger_auto_print(order: Order):
-    """Background thread: print server ko call karta hai."""
-    try:
-        payload = _build_receipt_payload(order)
-        resp = http_requests.post(PRINT_SERVER_URL, json=payload, timeout=5)
-        if resp.status_code == 200:
-            print(f"[AutoPrint] OK — {order.order_number}")
-        else:
-            print(f"[AutoPrint] Server error {resp.status_code} — {order.order_number}")
-    except http_requests.exceptions.ConnectionError:
-        print(f"[AutoPrint] Print server not running (skipped) — {order.order_number}")
-    except Exception as e:
-        print(f"[AutoPrint] Failed — {order.order_number}: {e}")
-
-# ─────────────────────────────────────────────────────────────────────────────
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def items(self, request, pk=None):
@@ -423,7 +469,7 @@ def _trigger_auto_print(order: Order):
         )
         return Response({"message": f"Order {order_number} deleted and orders renumbered."}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
     def receipt(self, request, pk=None):
         """Get receipt format"""
         from .utils.formatters import format_thermal_receipt

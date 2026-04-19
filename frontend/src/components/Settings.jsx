@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { outletApi, userApi, posKeyApi, POS_KEY_STORAGE } from '../services/api';
 import {
   Store,
-  Receipt,
   Percent,
   Save,
   MapPin,
@@ -265,7 +264,6 @@ export default function Settings({ user, onUpdateUser, electronKeyMode, onKeySet
              {[
                { id: 'general', label: 'Store Profile', icon: <Store size={20}/> },
                { id: 'tax', label: 'Taxes & GST', icon: <Percent size={20}/> },
-               { id: 'receipt', label: 'Receipt Designer', icon: <Receipt size={20}/> },
                { id: 'printer', label: 'Printer', icon: <Printer size={20}/> },
                { id: 'poskeys', label: 'POS Terminal Keys', icon: <Key size={20}/> },
                { id: 'users', label: 'Users', icon: <Users size={20}/> },
@@ -393,63 +391,6 @@ export default function Settings({ user, onUpdateUser, electronKeyMode, onKeySet
 
                 {activeTab === 'printer' && (
                   <PrinterSettings />
-                )}
-
-                {activeTab === 'receipt' && (
-                  <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-                    <h3 className="text-xl font-serif font-bold mb-6 flex items-center gap-3">
-                       <div className="size-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
-                          <Receipt size={20}/>
-                       </div>
-                       Receipt Designer
-                    </h3>
-                    <div>
-                       <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Receipt Header</label>
-                       <textarea 
-                         value={outlet.receipt_header || ''}
-                         onChange={(e) => setOutlet({...outlet, receipt_header: e.target.value})}
-                         placeholder="e.g. Welcome to Atul Ice Cream!"
-                         className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/20 text-center"
-                         rows={2}
-                       />
-                    </div>
-                    <div>
-                       <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">Receipt Footer</label>
-                       <textarea 
-                         value={outlet.receipt_footer || ''}
-                         onChange={(e) => setOutlet({...outlet, receipt_footer: e.target.value})}
-                         placeholder="e.g. Thank you, Visit Again!"
-                         className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-bold outline-none focus:border-atul-pink_primary/20 text-center"
-                         rows={2}
-                       />
-                    </div>
-                    
-                    {/* Live Preview */}
-                    <div className="pt-6">
-                       <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-4">Live Preview (Thermal 80mm)</label>
-                       <div className="bg-white border-atul-pink_primary/10 border p-10 max-w-sm mx-auto shadow-xl rounded-lg font-mono text-[10px] text-atul-charcoal uppercase text-center space-y-2">
-                          <p className="font-bold text-[14px]">{outlet.name}</p>
-                          <p className="whitespace-pre-wrap">{outlet.address}</p>
-                          <p>{outlet.receipt_header}</p>
-                          <div className="border-t border-dashed border-atul-charcoal my-4"></div>
-                          <div className="flex justify-between font-bold">
-                             <span>ITEM TOTAL (3)</span>
-                             <span>₹420.00</span>
-                          </div>
-                          <div className="flex justify-between">
-                             <span>GST ({outlet.base_tax_rate}%)</span>
-                             <span>₹21.00</span>
-                          </div>
-                          <div className="border-t border-dashed border-atul-charcoal my-4"></div>
-                          <div className="flex justify-between font-bold text-lg">
-                             <span>PAID</span>
-                             <span>₹441.00</span>
-                          </div>
-                          <div className="border-t border-dashed border-atul-charcoal my-4"></div>
-                          <p className="italic">{outlet.receipt_footer}</p>
-                       </div>
-                    </div>
-                  </motion.div>
                 )}
 
                 {false && (

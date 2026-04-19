@@ -53,12 +53,13 @@ class OrderSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         import json
         from apps.menu.models import Modifier
-        
+
         items_data = validated_data.pop('items')
         payment_mode = validated_data.pop('payment_mode', 'cash').lower()
         customer_phone = validated_data.pop('customer_phone', None)
-        user = self.context['request'].user
-        
+        request = self.context.get('request')
+        user = request.user if request and hasattr(request, 'user') and request.user and request.user.is_authenticated else None
+
         # Handle phone -> customer mapping
         if customer_phone:
             from apps.customers.models import Customer
@@ -72,7 +73,7 @@ class OrderSerializer(serializers.ModelSerializer):
                 print(f"Error mapping customer phone: {e}")
 
         # Auto-assign outlet if not provided
-        if 'outlet' not in validated_data and hasattr(user, 'outlet') and user.outlet:
+        if 'outlet' not in validated_data and user and hasattr(user, 'outlet') and user.outlet:
             validated_data['outlet'] = user.outlet
             
         order = Order.objects.create(**validated_data)

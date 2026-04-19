@@ -25,7 +25,7 @@ import time
 app = Flask(__name__)
 
 # CORS: atulicecream.com se browser requests allow karo
-CORS(app, origins=["https://atulicecream.com", "http://localhost:5173", "http://127.0.0.1:8000"])
+CORS(app, origins=["https://atulicecream.com", "http://atulicecream.com", "http://localhost:5173", "http://127.0.0.1:8000"])
 
 # ─── PRINTER NAME — first run pe config file se load, warna default ────────
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "printer_config.json")

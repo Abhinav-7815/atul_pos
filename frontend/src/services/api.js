@@ -185,6 +185,7 @@ export const menuApi = {
 
 export const orderApi = {
   createOrder: (data) => api.post('/orders/', data),
+  publicCreateOrder: (data) => api.post('/orders/public_create/', data),
   getOrder: (id) => api.get(`/orders/${id}/`),
   addItem: (orderId, data) => api.post(`/orders/${orderId}/items/`, data),
   updateItem: (orderId, itemId, data) => api.patch(`/orders/${orderId}/items/${itemId}/`, data),

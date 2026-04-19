@@ -19,9 +19,46 @@
       "Bash(curl -s http://127.0.0.1:8000/api/v1/users/ -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc1NTkyNjE0LCJpYXQiOjE3NzU1MDYyMTQsImp0aSI6ImExN2M1ZDE5ZmJjZjQxMDBiYWE2YzQxZjA0ZWY3NDZjIiwidXNlcl9pZCI6ImEzMmZkMmJmLTJmZmUtNGI3Zi1iNTM5LWI4NjU2ODFlZDcxYyJ9.2cPjMWI5SV3SoKdOi_IoV2-hiKtWU7s7CMJsvwa_vwU')",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
       "Bash(npm uninstall:*)",
-      "Bash(pip3 show:*)"
+      "Bash(pip3 show:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(sudo systemctl:*)",
+      "Bash(kill 83885 84012)",
+      "Bash(nohup python:*)",
+      "Bash(echo \"Started PID $!\")",
+      "Read(//tmp/**)",
+      "Bash(du -sh /root/atul_icecream/atul_pos/*)",
+      "Bash(du -sh /root/*)",
+      "Bash(du -sh /usr/local/lib/python*)",
+      "Bash(docker system:*)",
+      "Bash(ls -lh /root/atul_icecream/atul_pos/*.json /root/atul_icecream/atul_pos/*.xlsx /root/atul_icecream/atul_pos/*.html /root/atul_icecream/atul_pos/*.txt /root/atul_icecream/atul_pos/*.docx /root/atul_icecream/atul_pos/*.py)",
+      "Bash(ls /root/atul_icecream/atul_pos/*.json /root/atul_icecream/atul_pos/*.html /root/atul_icecream/atul_pos/*.txt)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker compose:*)",
+      "Bash(pm2 list:*)",
+      "Bash(systemctl list-units:*)",
+      "Bash(curl -s -H 'X-API-Key: 4c108f22ecdc6ba4c89f9dd6c627255fd75084ce5f8bac56509c28b8a1310c69' http://localhost:8000/api/v1/exe/outlet/)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:8000/api/v1/exe/outlet/)",
+      "Bash(curl -s -H \"X-API-Key: badkey123\" http://localhost:8000/api/v1/exe/outlet/)",
+      "Bash(git stash *)",
+      "Bash(sed -n '1,30p' /root/atul_icecream/atul_pos/frontend/src/services/printer.js)",
+      "Bash(sed -n '210,275p' /root/atul_icecream/atul_pos/frontend/src/services/printer.js)",
+      "Bash(python3)",
+      "Bash(sed -n '534,605p' /root/atul_icecream/atul_pos/frontend/src/components/POS.jsx)",
+      "Bash(sed -n '630,650p' /root/atul_icecream/atul_pos/frontend/src/components/POS.jsx)",
+      "Bash(sed -n '1840,1855p' /root/atul_icecream/atul_pos/frontend/src/components/POS.jsx)",
+      "Bash(sed -n '1965,1975p' /root/atul_icecream/atul_pos/frontend/src/components/POS.jsx)",
+      "Bash(sed -n '2100,2110p' /root/atul_icecream/atul_pos/frontend/src/components/POS.jsx)",
+      "Bash(git checkout *)",
+      "Bash(node -e ' *)",
+      "Bash(npx --yes esbuild src/components/POS.jsx)",
+      "Bash(npx esbuild *)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/root/.cache/electron"
+    ]
   }
 }

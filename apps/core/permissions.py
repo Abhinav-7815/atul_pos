@@ -1,4 +1,17 @@
 from rest_framework import permissions
+from .models import APIKey
+
+
+class HasAPIKey(permissions.BasePermission):
+    """
+    Grants access when request.auth is a valid, active APIKey instance.
+    Used for EXE / external integrations — no user login required.
+    """
+    message = 'Valid API key required. Pass it as X-API-Key header.'
+
+    def has_permission(self, request, view):
+        return isinstance(request.auth, APIKey)
+
 
 
 class IsPOSTerminal(permissions.BasePermission):

@@ -1,12 +1,6 @@
 /**
  * Atul POS — Print Service
- *
- * Electron EXE mein:
- *   → Python print_server.exe port 9192 pe chal raha hota hai
- *   → Seedha 9192 pe JSON bhejo → win32print → EPSON TM-T82
- *
- * Browser mein:
- *   → QZ Tray try karo → fallback browser print dialog
+ * Browser print dialog via hidden iframe.
  */
 
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
