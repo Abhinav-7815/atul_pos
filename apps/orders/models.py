@@ -44,17 +44,37 @@ class Order(BaseModel):
         return self.order_number
 
     def generate_order_number(self):
+        """Generates a unique order number with daily sequence and collision retry."""
         today = timezone.now().strftime('%Y%m%d')
         prefix = f"ORD-{today}"
+        
+        # We try up to 10 times to find a unique sequence number
+        # This handles cases where manual deletes or race conditions occur
+        for _ in range(10):
+            with transaction.atomic():
+                last_order = Order.objects.filter(
+                    outlet=self.outlet,
+                    order_number__startswith=prefix
+                ).order_by('order_number').last()
 
-        with transaction.atomic():
-            last_order = Order.objects.filter(
-                outlet=self.outlet,
-                order_number__startswith=prefix
-            ).order_by('order_number').last()
-
-            new_seq = (int(last_order.order_number.split('-')[-1]) + 1) if last_order else 1
-            return f"{prefix}-{str(new_seq).zfill(4)}"
+                if last_order:
+                    try:
+                        last_seq = int(last_order.order_number.split('-')[-1])
+                        new_seq = last_seq + 1
+                    except (ValueError, IndexError):
+                        # If format is corrupted, fall back to record count
+                        new_seq = Order.objects.filter(outlet=self.outlet, order_number__startswith=prefix).count() + 1
+                else:
+                    new_seq = 1
+                
+                new_number = f"{prefix}-{str(new_seq).zfill(4)}"
+                
+                # Double check uniqueness before returning
+                if not Order.objects.filter(order_number=new_number).exists():
+                    return new_number
+        
+        # Absolute fallback: timestamp based
+        return f"{prefix}-{int(timezone.now().timestamp())}"
 
     def generate_token_number(self):
         if self.order_type != OrderType.TAKEAWAY:

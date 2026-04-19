@@ -7,16 +7,28 @@ from .serializers import (
     ModifierGroupSerializer, ModifierSerializer
 )
 from apps.core.permissions import IsSuperAdmin
+from apps.accounts.pos_auth import POSTerminalKeyAuthentication, POSTerminalUser
+
 
 class IsSuperAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
+        # POS terminal key — read-only access allowed
+        if isinstance(request.user, POSTerminalUser):
+            return request.method in permissions.SAFE_METHODS
         if request.method in permissions.SAFE_METHODS:
             return True
         return request.user.is_authenticated and (
             request.user.role == 'superadmin' or request.user.is_superuser
         )
 
-class CategoryViewSet(viewsets.ModelViewSet):
+
+class POSAuthMixin:
+    def get_authenticators(self):
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        return [POSTerminalKeyAuthentication(), JWTAuthentication()]
+
+
+class CategoryViewSet(POSAuthMixin, viewsets.ModelViewSet):
     permission_classes = [IsSuperAdminOrReadOnly]
     serializer_class = CategorySerializer
 
@@ -66,7 +78,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         )
 
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(POSAuthMixin, viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsSuperAdminOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

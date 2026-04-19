@@ -93,3 +93,82 @@ class OutletSwitchView(APIView):
         })
 
 from django.shortcuts import get_object_or_404
+
+
+# ─── POS Terminal Key Management ───────────────────────────────────────────────
+
+def _get_outlet_for_user(user):
+    """Resolve the outlet for a user; superadmins without outlet get the first outlet."""
+    if user.outlet:
+        return user.outlet
+    from apps.outlets.models import Outlet
+    return Outlet.objects.first()
+
+class POSKeyListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from apps.accounts.models import POSTerminalKey
+        outlet = _get_outlet_for_user(request.user)
+        if not outlet:
+            return Response({'success': True, 'data': []})
+        # Superadmin sees all keys; others see only their outlet
+        if request.user.role == 'superadmin' or request.user.is_superuser:
+            keys = POSTerminalKey.objects.all()
+        else:
+            keys = POSTerminalKey.objects.filter(outlet=outlet)
+        data = [
+            {
+                'id': str(k.pk),
+                'key': str(k.key),
+                'name': k.name,
+                'is_active': k.is_active,
+                'created_at': k.created_at,
+                'last_used': k.last_used,
+            }
+            for k in keys
+        ]
+        return Response({'success': True, 'data': data})
+
+    def post(self, request):
+        from apps.accounts.models import POSTerminalKey
+        name = request.data.get('name', '').strip()
+        outlet_id = request.data.get('outlet_id')
+        if not name:
+            return Response({'success': False, 'error': 'Name required.'}, status=400)
+        if outlet_id:
+            from apps.outlets.models import Outlet
+            outlet = get_object_or_404(Outlet, pk=outlet_id)
+        else:
+            outlet = _get_outlet_for_user(request.user)
+        if not outlet:
+            return Response({'success': False, 'error': 'No outlet found.'}, status=400)
+        key = POSTerminalKey.objects.create(
+            name=name,
+            outlet=outlet,
+            created_by=request.user,
+        )
+        return Response({'success': True, 'data': {'id': str(key.pk), 'key': str(key.key), 'name': key.name}}, status=201)
+
+
+class POSKeyDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_key(self, request, pk):
+        from apps.accounts.models import POSTerminalKey
+        if request.user.role == 'superadmin' or request.user.is_superuser:
+            return get_object_or_404(POSTerminalKey, pk=pk)
+        outlet = _get_outlet_for_user(request.user)
+        return get_object_or_404(POSTerminalKey, pk=pk, outlet=outlet)
+
+    def delete(self, request, pk):
+        key = self._get_key(request, pk)
+        key.delete()
+        return Response({'success': True})
+
+    def patch(self, request, pk):
+        key = self._get_key(request, pk)
+        key.is_active = request.data.get('is_active', key.is_active)
+        key.name = request.data.get('name', key.name)
+        key.save()
+        return Response({'success': True, 'data': {'id': str(key.pk), 'key': str(key.key), 'name': key.name, 'is_active': key.is_active}})

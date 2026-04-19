@@ -13,6 +13,10 @@ require('fs').appendFileSync(require('os').tmpdir() + '/atul_pos_main.log',
  */
 
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
 const path    = require('path');
 const http    = require('http');
 const fs      = require('fs');
@@ -23,26 +27,43 @@ const os      = require('os');
 
 const PYTHON_PORT = 9192;
 let pythonProcess  = null;
+let lastPythonError = 'No error recorded yet';
+let searchedPaths   = [];
 
 function findPythonExe() {
-  // Packaged EXE ke andar resources folder mein print_server.exe hoga
-  // Dev mein system python use hota hai
+  const isPackaged = app.isPackaged;
+  const resourcesPath = process.resourcesPath;
+  const execDir = path.dirname(process.execPath);
+
   const candidates = [
-    path.join(process.resourcesPath || __dirname, 'print_server.exe'),  // PyInstaller frozen exe
+    // 1. Packaged: Default resources path
+    path.join(resourcesPath, 'print_server.exe'),
+    // 2. Packaged: Relative to EXE
+    path.join(execDir, 'resources', 'print_server.exe'),
+    // 3. Dev: Local folder
     path.join(__dirname, 'print_server.exe'),
     'python',
-    'python3',
+    'python3'
   ];
+
+  searchedPaths = candidates;
   for (const c of candidates) {
     try {
       if (c.endsWith('.exe')) {
-        if (fs.existsSync(c)) return { exe: c, args: [] };
+        if (fs.existsSync(c)) {
+          console.log(`[PythonServer] Found EXE at: ${c}`);
+          return { exe: c, args: [] };
+        }
       } else {
-        execSync(`${c} --version`, { stdio: 'ignore', timeout: 3000 });
-        const script = path.join(process.resourcesPath || __dirname, 'print_server.py');
-        const scriptFallback = path.join(__dirname, 'print_server.py');
-        const scriptPath = fs.existsSync(script) ? script : scriptFallback;
-        return { exe: c, args: [scriptPath] };
+        // Only try system python if not packaged
+        if (!isPackaged) {
+          execSync(`${c} --version`, { stdio: 'ignore', timeout: 1000 });
+          const script = path.join(__dirname, 'print_server.py');
+          if (fs.existsSync(script)) {
+            console.log(`[PythonServer] Found Python with script: ${script}`);
+            return { exe: c, args: [script] };
+          }
+        }
       }
     } catch (_) {}
   }
@@ -59,17 +80,32 @@ function spawnPythonServer() {
   const { exe, args } = found;
   console.log(`[PythonServer] Spawning: ${exe} ${args.join(' ')}`);
 
+  // Force-kill any orphaned print_server.exe to avoid EADDRINUSE (Port 9192)
+  if (exe.endsWith('.exe')) {
+    try { execSync('taskkill /F /IM print_server.exe /T', { stdio: 'ignore' }); } catch(_) {}
+  }
+
   pythonProcess = spawn(exe, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
 
   pythonProcess.stdout.on('data', d => process.stdout.write('[Python] ' + d));
-  pythonProcess.stderr.on('data', d => process.stderr.write('[Python] ' + d));
+  pythonProcess.stderr.on('data', d => {
+    lastPythonError = d.toString();
+    process.stderr.write('[Python] ' + d);
+  });
 
   pythonProcess.on('exit', (code) => {
     console.log(`[PythonServer] Process exited with code ${code}`);
     pythonProcess = null;
+    pythonReady = false;
+    
+    // Auto-restart if it crashed (code !== 0)
+    if (code !== 0 && code !== null) {
+      console.log('[PythonServer] Crushed! Restarting in 2 seconds...');
+      setTimeout(spawnPythonServer, 2000);
+    }
   });
 }
 
@@ -91,12 +127,12 @@ async function waitForPythonServer(timeoutMs = 5000) {
   return false;
 }
 
-async function forwardToPython(printerName, data) {
+async function forwardToPython(printerName, data, port) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
     const options = {
       hostname: '127.0.0.1',
-      port: PYTHON_PORT,
+      port: port || PYTHON_PORT,
       path: '/print',
       method: 'POST',
       headers: {
@@ -216,12 +252,26 @@ function buildEscPos(data) {
   // Items
   for (const item of items) {
     const name   = item.product_name || item.name || 'Item';
-    const unit   = item.unit_label || 'pc(s)';
+    const unit   = (item.unit_label || '').trim();
     const qty    = parseFloat(item.quantity || 1);
     const price  = parseFloat(item.unit_price || item.price || 0);
     const amount = parseFloat(item.item_total || item.item_subtotal || (qty * price));
+
+    // Qty display logic:
+    // "250 Gms", "500 Gms" (starts with digit) → just unit_label
+    // "Cup", "Cone" (letters only) → qty + unit_label (e.g. "3 Cup")
+    // "pc(s)" / empty → just qty number
+    let qtyDisplay;
+    if (!unit || unit === 'pc(s)' || unit.toLowerCase() === 'pcs' || unit.toLowerCase() === 'pc') {
+      qtyDisplay = String(qty % 1 === 0 ? qty : qty.toFixed(2));
+    } else if (/^\d/.test(unit)) {
+      qtyDisplay = unit;
+    } else {
+      qtyDisplay = `${qty % 1 === 0 ? qty : qty.toFixed(2)} ${unit}`;
+    }
+
     add(ALIGN_L);
-    add(enc(threeCol(name, `${qty} ${unit}`, `Rs${amount.toFixed(0)}`) + '\n'));
+    add(enc(threeCol(name, qtyDisplay, `Rs${amount.toFixed(0)}`) + '\n'));
     add(enc(threeCol(`  @ Rs${price.toFixed(2)}`, '', '') + '\n'));
   }
 
@@ -374,21 +424,34 @@ function startPrintServer() {
       return;
     }
 
+    if (req.method === 'GET' && req.url === '/debug') {
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        execPath: process.execPath,
+        searchedPaths,
+        pythonReady,
+        lastPythonError,
+        pythonProcessExists: !!pythonProcess
+      }, null, 2));
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/print') {
       let body = '';
       req.on('data', c => body += c);
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
-          const printerName = config.printerName;
+          // DEBUG — items ka unit_label dekho
+          console.log('[PrintServer] Items received:', JSON.stringify(data.items, null, 2));
+          // Header ya config se printer name lo
+          const printerName = req.headers['x-printer-name'] || config.printerName;
 
-          if (!printerName) {
-            res.writeHead(422); res.end(JSON.stringify({ error: 'No printer configured' })); return;
-          }
-
-          // HTML -> silent Electron print (dialog-free)
+          // HTML -> silent Electron print (dialog-free) — printer name optional
           if (data.html !== undefined) {
-            silentHtmlPrint(data.html, printerName);
+            silentHtmlPrint(data.html, printerName || '');
             res.writeHead(200); res.end(JSON.stringify({ success: true, method: 'html' }));
             return;
           }
@@ -424,6 +487,13 @@ function startPrintServer() {
     res.writeHead(404); res.end();
   });
 
+  server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error('[PrintServer] Port 9191 in use. Already running?');
+      // Port in use — optional: try to kill the process or just ignore if we are single instance
+    }
+  });
+
   server.listen(9191, '127.0.0.1', () => {
     console.log('[PrintServer] Running on port 9191');
   });
@@ -443,45 +513,47 @@ function silentHtmlPrint(htmlContent, deviceName) {
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200, height: 800,
-    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') }
+    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs'), allowRunningInsecureContent: true, webSecurity: false }
   });
   mainWindow.webContents.setUserAgent(mainWindow.webContents.getUserAgent() + ' AtulPOS-Electron');
-  mainWindow.webContents.openDevTools(); // DEBUG — remove after fix
-  const localIndex = path.join(__dirname, 'dist', 'index.html');
+const localIndex = path.join(__dirname, 'dist', 'index.html');
   if (fs.existsSync(localIndex)) {
     mainWindow.loadFile(localIndex);
   } else {
-    mainWindow.loadURL('https://atulicecream.com/pos/login');
+    mainWindow.loadURL('http://atulicecream.com/pos/login');
   }
 }
 
 app.on('ready', async () => {
-  // 0. Config load (app ready hone ke baad hi getPath kaam karta hai)
+  // 1. Config load
   config = loadConfig();
 
-  // 1. Printer setup wizard (pehli baar)
+  // 2. Electron HTTP server start karo (port 9191) — HTML print ke liye
+  startPrintServer();
+
+  // 3. Python print_server.exe spawn karo (port 9192) — ESC/POS ke liye
+  spawnPythonServer();
+  waitForPythonServer(6000).then(ok => {
+    pythonReady = ok;
+    console.log(ok ? '[PythonServer] Ready on 9192' : '[PythonServer] Not available — Node.js fallback');
+  });
+
+  // 4. Browser window
+  createWindow();
+
+  // 4. Printer setup wizard (pehli baar)
   if (!config.printerName) {
     const selected = await runPrinterSetupWizard();
     if (selected) { config.printerName = selected; saveConfig(config); }
   }
-
-  // 2. Python print server — externally chalta hai (print_server.py), EXE spawn nahi karega
-  waitForPythonServer(3000).then(ok => {
-    pythonReady = ok;
-    console.log(ok
-      ? '[PythonServer] External server ready on port 9192'
-      : '[PythonServer] Not available — Node.js fallback will be used'
-    );
-  });
-
-  // 3. Electron HTTP server start karo (port 9191)
-  startPrintServer();
-
-  // 4. Browser window
-  createWindow();
 });
 
 app.on('window-all-closed', () => {
+  if (pythonProcess) {
+    console.log('[Main] Killing pythonProcess before exit');
+    pythonProcess.kill();
+    pythonProcess = null;
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -489,3 +561,20 @@ app.on('window-all-closed', () => {
 ipcMain.handle('get-config', () => config);
 ipcMain.handle('get-printers', () => getWindowsPrinters());
 ipcMain.handle('set-printer', (_, name) => { config.printerName = name; saveConfig(config); return { success: true }; });
+
+// ESC/POS print via Node.js http — bypasses renderer fetch/CORS entirely
+ipcMain.handle('print-escpos', async (_, data, printerName, port) => {
+  const printer = printerName || config.printerName;
+  if (!printer) return { success: false, error: 'No printer configured' };
+  const printPort = parseInt(port) || PYTHON_PORT;
+  console.log('[IPC] print-escpos called, printer:', printer, 'port:', printPort);
+  try {
+    const result = await forwardToPython(printer, data, printPort);
+    console.log('[IPC] Python result:', result.ok, result.body);
+    if (result.ok && result.body.success) return { success: true };
+    return { success: false, error: result.body.error || 'Print failed' };
+  } catch (e) {
+    console.error('[IPC] print-escpos error:', e.message);
+    return { success: false, error: e.message };
+  }
+});

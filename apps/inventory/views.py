@@ -4,16 +4,23 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from .models import StockItem, InventoryTransaction, Supplier, PurchaseOrder, PurchaseOrderItem
 from .serializers import (
-    StockItemSerializer, InventoryTransactionSerializer, 
+    StockItemSerializer, InventoryTransactionSerializer,
     SupplierSerializer, PurchaseOrderSerializer
 )
 from apps.menu.models import Product, ProductVariant
 from apps.outlets.models import Outlet
+from apps.core.permissions import IsCashierOrPOSTerminal
+from apps.accounts.pos_auth import POSTerminalKeyAuthentication
 from decimal import Decimal
 
 class InventoryViewSet(viewsets.ModelViewSet):
     queryset = StockItem.objects.all()
     serializer_class = StockItemSerializer
+    permission_classes = [IsCashierOrPOSTerminal]
+
+    def get_authenticators(self):
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        return [POSTerminalKeyAuthentication(), JWTAuthentication()]
 
     def get_queryset(self):
         qs = self.queryset

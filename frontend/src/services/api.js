@@ -2,17 +2,27 @@ import axios from 'axios';
 
 // Electron mein file:// protocol hota hai — absolute URL chahiye
 const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
-const API_URL = isElectron ? 'https://atulicecream.com/api/v1' : '/api/v1';
+const API_URL = isElectron ? 'http://atulicecream.com/api/v1' : '/api/v1';
+
+export const POS_KEY_STORAGE = 'atul_pos_terminal_key';
+export const getPOSKey = () => { try { return localStorage.getItem(POS_KEY_STORAGE) || ''; } catch { return ''; } };
 
 const api = axios.create({
   baseURL: API_URL,
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
-  // Skip adding token for auth routes to avoid validation errors on stale tokens
-  const skipAuth = config.url.includes('/auth/login/') || config.url.includes('/auth/refresh/');
+  // EXE mode — use POS terminal key instead of JWT
+  if (isElectron) {
+    const posKey = getPOSKey();
+    if (posKey) {
+      config.headers['X-POS-Key'] = posKey;
+      return config;
+    }
+  }
 
+  const token = localStorage.getItem('access_token');
+  const skipAuth = config.url.includes('/auth/login/') || config.url.includes('/auth/refresh/');
   if (token && !skipAuth) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -54,7 +64,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         // No refresh token — redirect to login
         localStorage.removeItem('access_token');
-        window.location.href = '/pos/login';
+        window.location.href = isElectron ? '#/login' : '/pos/login';
         return Promise.reject(error);
       }
 
@@ -70,7 +80,7 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/pos/login';
+        window.location.href = isElectron ? '#/login' : '/pos/login';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -289,6 +299,13 @@ export const distributionApi = {
 
   // Distributor outlets (filtered from outletApi)
   getDistributorOutlets: () => api.get('/outlets/', { params: { outlet_type: 'distributor' } }),
+};
+
+export const posKeyApi = {
+  list:   ()         => api.get('/auth/pos-keys/'),
+  create: (name)     => api.post('/auth/pos-keys/', { name }),
+  remove: (id)       => api.delete(`/auth/pos-keys/${id}/`),
+  toggle: (id, is_active) => api.patch(`/auth/pos-keys/${id}/`, { is_active }),
 };
 
 export default api;

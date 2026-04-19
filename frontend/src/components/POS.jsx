@@ -32,55 +32,78 @@ const UNIT_OPTIONS = [
   { type: 'liquid', step: 0.25, min: 0.25, label: 'L' },
 ];
 
+// Categories that are sold by WEIGHT (grams/kg)
+const WEIGHT_CATEGORIES = ['loose ice cream', 'sweet', 'mithai', 'namkeen', 'dry fruit', 'farsan'];
+// Categories that are sold by PIECE/QTY
+const PIECE_CATEGORIES = ['thick shake', 'cone', 'cassata', 'candy', 'atul special', 'special', 'shake', 'sundae', 'bar', 'kulfi', 'roll'];
+
+const getCategoryType = (product) => {
+  if (!product) return 'piece';
+  const cat = (product.category_name || '').toLowerCase();
+  if (WEIGHT_CATEGORIES.some(w => cat.includes(w))) return 'weight';
+  if (PIECE_CATEGORIES.some(p => cat.includes(p))) return 'piece';
+  // Default: if category has 'ice cream' but is NOT loose, treat as piece
+  if (cat.includes('ice cream')) return 'piece';
+  return 'piece';
+};
+
 const getDefaultUnit = (product) => {
   if (!product) return UNIT_OPTIONS[0];
-  const cat = (product.category_name || '').toLowerCase();
-  // If it's a scoop, default to Piece (1 Scoop = 100g)
-  if (cat.includes('scoop')) return UNIT_OPTIONS.find(u => u.type === 'piece') || UNIT_OPTIONS[0];
-  if (cat.includes('shake')) return UNIT_OPTIONS.find(u => u.type === 'piece') || UNIT_OPTIONS[0];
-  return UNIT_OPTIONS[0];
+  const type = getCategoryType(product);
+  return UNIT_OPTIONS.find(u => u.type === type) || UNIT_OPTIONS[0];
 };
 
 const getVariationsForItem = (item) => {
-  const unit = item.unitInfo?.type || 'piece';
-  const cat = (item.product.category_name || '').toLowerCase();
-  
-  if (cat.includes('scoop')) {
+  const p = item?.product;
+
+  // Empty state — use category context if available
+  if (!p) {
     return [
-      { value: 1, label: '100g', unitType: 'piece', fullName: '100 Grams' },
-      { value: 0.25, label: '250g', unitType: 'weight' },
-      { value: 0.50, label: '500g', unitType: 'weight' },
-      { value: 0.75, label: '750g', unitType: 'weight' },
-      { value: 1.00, label: '1kg', unitType: 'weight' },
+      { value: 0.1, label: '100g' },
+      { value: 0.25, label: '250g' },
+      { value: 0.50, label: '500g' },
+      { value: 0.75, label: '750g' },
+      { value: 1.00, label: '1kg' },
     ];
   }
 
-  if (unit === 'weight') return [
-    { value: 0.25, label: '250g' },
-    { value: 0.50, label: '500g' },
-    { value: 0.75, label: '750g' },
-    { value: 1.00, label: '1kg' },
-  ];
-  if (unit === 'liquid') return [
-    { value: 0.25, label: '250ml' },
-    { value: 0.50, label: '500ml' },
-    { value: 0.75, label: '750ml' },
-    { value: 1.00, label: '1L' },
-  ];
-  // Piece variations
+  const catType = getCategoryType(p);
+
+  // Weight-based categories (sold in grams/kg)
+  if (catType === 'weight') {
+    return [
+      { value: 0.1,  label: '100g'  },
+      { value: 0.25, label: '250g'  },
+      { value: 0.50, label: '500g'  },
+      { value: 0.75, label: '750g'  },
+      { value: 1.00, label: '1kg'   },
+    ];
+  }
+
+  // Liquid (shakes sold in ml)
+  if (item.unitInfo?.type === 'liquid') {
+    return [
+      { value: 0.25, label: '250ml' },
+      { value: 0.50, label: '500ml' },
+      { value: 0.75, label: '750ml' },
+      { value: 1.00, label: '1L'    },
+    ];
+  }
+
+  // Piece-based: Thick Shake, Cone, Cassata, Candy, Atul Special, etc.
   return [
-    { value: 1, label: '1 Qty' },
-    { value: 2, label: '2 Qty' },
-    { value: 3, label: '3 Qty' },
-    { value: 4, label: '4 Qty' },
-    { value: 5, label: '5 Qty' },
+    { value: 1, label: '1 Pc'  },
+    { value: 2, label: '2 Pcs' },
+    { value: 3, label: '3 Pcs' },
+    { value: 4, label: '4 Pcs' },
+    { value: 5, label: '5 Pcs' },
   ];
 };
 
 const format100g = (name, qty = 1) => {
   if (!name) return name;
   const is100g = ['100g', '100gm', '100gms', '100gram', '100grams'].includes(name.toLowerCase().replace(/\s/g, ''));
-  if (is100g) return qty === 1 ? '1 Cup' : `${qty} Cups`;
+  if (is100g) return '1 Cup';
   return name;
 };
 
@@ -285,15 +308,15 @@ export default function POS({ user }) {
 
   const handleProductClick = (product) => {
     const unitInfo = getDefaultUnit(product);
-    const defaultQty = (product.category_name || '').toLowerCase().includes('scoop') ? 1 : (unitInfo.type === 'weight' ? 0.25 : 1);
     
     setManagerItem({ 
       product, 
-      variant: product.variants?.find(v => v.is_default) || product.variants?.[0] || null, 
+      variant: null,  // No variant pre-selected — user must tap a variation
       modifiers: [], 
-      qty: defaultQty, 
+      qty: null,      // No qty pre-selected — no button highlighted by default
       unitInfo,
-      manualPrice: null
+      manualPrice: null,
+      customPrice: null
     });
   };
 
@@ -323,8 +346,8 @@ export default function POS({ user }) {
       }
       return [...prev, { product, variant, modifiers, qty, unitInfo, manualPrice, customPrice }];
     });
-    // Reset configuration state after adding to cart
-    setManagerItem(null);
+    // Keep configuration open after adding to cart as per 'always on' requirement
+    // setManagerItem(null);
   };
 
   const applyVariation = (v) => {
@@ -460,7 +483,7 @@ export default function POS({ user }) {
       items: cart.map(item => ({
         product: item.product.id,
         variant: item.variant ? item.variant.id : null,
-        quantity: item.qty,
+        quantity: parseFloat(parseFloat(item.qty).toFixed(2)),
         modifiers: (item.modifiers || []).map(m => m.id)
       })),
       cartSnapshot: [...cart] // For KOT/Offline preview
@@ -500,25 +523,73 @@ export default function POS({ user }) {
     try {
       const response = await orderApi.createOrder(orderData);
       const or = response.data?.data || response.data;
-      const orderId = or.id;
-      const receiptRes = await orderApi.getReceipt(orderId);
-      const rr = receiptRes.data?.data || receiptRes.data;
-      // CRITICAL: Merge the API data with our local cart snapshot for KOT printing
-      const updatedOrder = { ...or, receipt: rr, cartSnapshot: [...cart] };
-      setLastOrder(updatedOrder);
       
-      // AUTO-PRINT: Pehle Python server (9192) try karo — Electron ho ya browser
-      // Agar print_server.py locally chal raha hai to seedha ESC/POS print hoga
-      printOrderEscPos(rr);
+      // Get receipt data from API, but if MISSING, reconstruct it from what we just sent!
+      let rr = or.receipt;
+      if (!rr) {
+        console.warn('[POS] API missed receipt data, reconstructing locally...');
+        rr = {
+          outlet: user?.outlet || { name: 'ATUL ICE CREAM', address: '', phone: '' },
+          order_number: or.order_number || or.invoice_no || 'ORD-' + Date.now(),
+          date: new Date().toISOString(),
+          // CRITICAL: Map items and numbers correctly using the local cart structure
+          items: cart.map(item => {
+            const price = calculateItemPrice(item);
+            return {
+              product_name: item.product?.name || 'Item',
+              variant_name: item.variant?.name || '',
+              quantity: item.qty,
+              unit_price: price,
+              item_total: price * item.qty
+            };
+          }),
+          totals: {
+            subtotal: subtotal,
+            cgst: tax / 2,
+            sgst: tax / 2,
+            total: total
+          },
+          cashier: user?.full_name || 'Staff',
+          order_type: orderType || 'Dine In'
+        };
+      }
+      console.log('[POS] Final data for print:', rr);
+
+      // CRITICAL: Merge the API data with our local cart snapshot for state
+      const updatedOrder = { ...or, cartSnapshot: [...cart] };
+      setLastOrder(updatedOrder);
+      setStep('success'); // Move to success step first
+
+      // AUTO-PRINT LOGIC:
+      // 1. Try Python Server (Direct ESC/POS)
+      const printSuccess = await printOrderEscPos(rr);
+      
+      // 2. If Python server failed (Browser mode), trigger Browser Print Preview
+      if (!printSuccess) {
+        console.log("Python server not available, falling back to browser print...");
+        setTimeout(() => {
+          printReceipt({ receiptRef });
+          // Automatically return to menu after 3 seconds of showing success
+          setTimeout(() => {
+            if (setStep) setStep('select');
+            setLastOrder(null);
+          }, 3000);
+        }, 300);
+      } else {
+        // Even if python printed, reset after a delay
+        setTimeout(() => {
+          setStep('select');
+          setLastOrder(null);
+        }, 1500);
+      }
 
       // Auto-WhatsApp if phone exists
       if (updatedOrder.customer_phone) {
         sendOrderToWhatsApp(updatedOrder);
       }
 
-      setStep('select'); // Reset to menu immediately
       setCart([]);
-      loadData(); // REFRESH STOCK IMMEDIATELY AFTER ORDERING
+      loadData(); // REFRESH STOCK
       setCustomerPhone('');
       setCustomerName('');
       setTableNo('');
@@ -544,12 +615,15 @@ export default function POS({ user }) {
   const handlePrintBill = useCallback(() => {
     if (!lastOrder) return;
     const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
+    
     if (isElectron && lastOrder.receipt) {
+      // Direct thermal printing for EXE
       printOrderEscPos(lastOrder.receipt);
     } else {
+      // Browser print preview for Web
       printReceipt({ receiptRef });
     }
-  }, [lastOrder]);
+  }, [lastOrder, receiptRef]);
 
   // Hold Order Methods
   const handleHoldOrder = () => {
@@ -599,7 +673,7 @@ export default function POS({ user }) {
     const r = lastOrder.receipt || {};
 
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xl select-none overflow-hidden">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/30 backdrop-blur-md select-none overflow-hidden">
         <motion.div initial={{scale:0.9, opacity:0, y:20}} animate={{scale:1, opacity:1, y:0}} exit={{scale:0.9, opacity:0, y:20}}
           className="relative w-full max-w-[480px] bg-white rounded-[3.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden group">
           
@@ -1653,13 +1727,16 @@ export default function POS({ user }) {
                       </div>
                     </div>
 
-                    {/* Low-stock indicator dot */}
-                    {isLowStock && !isOutOfStock && (
-                      <div className="absolute top-2 left-2 z-30 flex items-center justify-center">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500 border border-white shadow-sm"></span>
-                        </span>
+                    {/* Configuring Overlay */}
+                    {isSelected && (
+                      <div className="absolute inset-0 z-40 bg-white/40 backdrop-blur-[1px] flex items-center justify-center rounded-2xl overflow-hidden p-2">
+                        <motion.div 
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          className="bg-atul-pink_primary text-white text-[9px] font-black tracking-widest px-3 py-1.5 rounded-full shadow-lg uppercase"
+                        >
+                          Configuring
+                        </motion.div>
                       </div>
                     )}
 
@@ -1720,149 +1797,161 @@ export default function POS({ user }) {
                 </div>
               </div>
 
-              {/* Configure panel */}
-              <div className="flex items-center px-5 h-[130px] gap-6">
+              {/* Configure panel content */}
+              <div className="flex items-center px-10 h-[140px] gap-6">
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
+                  initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="w-full flex items-center justify-between bg-[#FDF3F6]/80 backdrop-blur-xl rounded-[2.5rem] border-2 border-atul-pink_soft/40 p-5 shadow-xl relative overflow-hidden"
+                  className="w-full flex items-center justify-between bg-atul-pink_soft/10 backdrop-blur-sm rounded-[2.5rem] border-2 border-white p-5 shadow-sm relative overflow-hidden"
                 >
-                  <div className="absolute top-0 right-10 p-2 opacity-10 pointer-events-none">
-                     <MI name="icecream" className="text-8xl" fill />
-                  </div>
+                  <div className="flex items-center flex-1 w-full gap-8">
+                    {/* Segment 1: Variations (Left) */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex bg-white/60 p-1.5 rounded-2xl border border-atul-pink_soft/30 items-center gap-1.5 overflow-x-auto no-scrollbar w-fit">
+                         {(() => {
+                            const activeCat = categories.find(c => c.id === selectedCategory);
+                            const variationsToDisplay = managerItem 
+                              ? (managerItem.product.variants?.length > 0 ? null : getVariationsForItem(managerItem))
+                              : getVariationsForItem({ product: { category_name: activeCat?.name || '' } });
+                            
+                            if (managerItem && managerItem.product.variants?.length > 0) {
+                              // Ensure fixed order for the variants regardless of DB order
+                              const sortedVariants = [...managerItem.product.variants].sort((a, b) => {
+                                const getVal = (n) => {
+                                  let str = (n || '').toLowerCase().replace(/\s/g, '');
+                                  if (str.includes('100g') || str.includes('1cup') || str.includes('100gm')) return 1;
+                                  if (str.includes('250g') || str.includes('250gm')) return 2;
+                                  if (str.includes('500g') || str.includes('500gm')) return 3;
+                                  if (str.includes('750g') || str.includes('750gm')) return 4;
+                                  if (str.includes('1kg') || str.includes('1000g')) return 5;
+                                  return 99;
+                                };
+                                return getVal(a.name) - getVal(b.name);
+                              });
 
-                  <div className="flex gap-10 items-center flex-1">
-                    <div className="shrink-0 flex flex-col min-w-[150px]">
-                      <div className="flex items-center gap-3">
-                        <h4 className="text-[20px] font-extrabold text-atul-charcoal leading-none tracking-tight truncate">
-                          {managerItem?.product?.name || '--'}
-                        </h4>
-                        {managerItem?.product && (
-                          <div className={cn(
-                            "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white shadow-sm",
-                            (() => {
-                              const key = managerItem.variant ? `${managerItem.product.id}_${managerItem.variant.id}` : `${managerItem.product.id}`;
-                              const info = stockMap[key] || stockMap[managerItem.product.id]; // fallback to product stock
-                              return parseFloat(info?.quantity || 0) > 0 ? "bg-emerald-50 text-emerald-500" : "bg-red-50 text-red-500";
-                            })()
-                          )}>
-                             Available Stock: {(() => {
-                               const key = managerItem.variant ? `${managerItem.product.id}_${managerItem.variant.id}` : `${managerItem.product.id}`;
-                               const info = stockMap[key] || stockMap[managerItem.product.id];
-                               const qty = info?.quantity || 0;
-                               const unit = managerItem.product?.is_packaged_good ? 'KG' : 'KG'; // User requested KG instead of PCS
-                               return `${qty} ${unit}`;
-                             })()}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        {managerItem?.variant && (
-                          <span className="text-[10px] font-black text-atul-pink_primary uppercase tracking-widest bg-white px-2 py-0.5 rounded-lg border border-atul-pink_soft/30">
-                            {format100g(managerItem.variant.name, managerItem.qty)}
-                          </span>
-                        )}
-                        <span className="text-[12px] font-black text-atul-pink_primary font-mono mt-1">
-                          Rate: {managerItem ? (
-                            managerItem.customPrice 
-                              ? `₹${(calculateItemPrice(managerItem) * managerItem.qty).toFixed(0)} Total`
-                              : `₹${calculateItemPrice(managerItem).toFixed(0)}/${managerItem.qty < 1 ? 'g' : (managerItem.unitInfo?.label || 'Qty')}`
-                          ) : '--'}
-                        </span>
-                      </div>
-                    </div>
+                              return sortedVariants.map(v => (
+                                <button 
+                                  key={v.id}
+                                  onClick={() => addToCartFromManager({ ...managerItem, variant: v, qty: 1 })}
+                                  className={cn(
+                                    "min-w-24 h-16 px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap border-2",
+                                    managerItem.variant?.id === v.id
+                                      ? "bg-atul-pink_primary border-atul-pink_primary text-white shadow-lg" 
+                                      : "bg-white border-transparent text-atul-charcoal/80 hover:border-atul-pink_soft shadow-sm font-bold text-[13px]"
+                                  )}
+                                >
+                                  <span className="leading-none">{format100g(v.name, 1)}</span>
+                                  <span className={cn("text-[11px] font-black mt-0.5", managerItem.variant?.id === v.id ? "text-white/90" : "text-atul-pink_primary")}>
+                                    ₹{(Number(managerItem.product.display_price || managerItem.product.base_price) + Number(v.current_price || v.price_delta)).toFixed(0)}
+                                  </span>
+                                </button>
+                              ));
+                            }
 
-                    <div className="flex gap-3 items-center min-w-0">
-                      {/* Combined Variations Box */}
-                      <div className="flex bg-white p-1 rounded-2xl border border-atul-pink_soft/40 shadow-sm items-center gap-1 overflow-x-auto no-scrollbar max-w-[680px] min-h-[56px]">
-                        {!managerItem ? (
-                           /* Skeletons for fallback */
-                           Array.from({ length: 6 }).map((_, i) => (
-                             <div key={i} className="min-w-[80px] h-[56px] px-4 rounded-xl border border-gray-50 flex flex-col items-center justify-center opacity-10">
-                                <div className="w-10 h-1.5 bg-atul-charcoal rounded-full mb-1" />
-                                <div className="w-6 h-1 bg-atul-charcoal rounded-full" />
-                             </div>
-                           ))
-                        ) : managerItem.product.variants?.length > 0 ? (
-                           managerItem.product.variants.map(v => (
-                             <button 
-                               key={v.id}
-                               onClick={() => addToCartFromManager({ ...managerItem, variant: v, qty: 1 })}
-                               className={cn(
-                                 "min-w-[80px] h-[56px] px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap",
-                                 managerItem.variant?.id === v.id
-                                   ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 z-10" 
-                                   : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
-                               )}
-                             >
-                               <span className="leading-none text-[13px]">{format100g(v.name, 1)}</span>
-                               <span className={cn("font-bold text-[11px] mt-0.5 transition-all", managerItem.variant?.id === v.id ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
-                                 ₹{(Number(managerItem.product.display_price || managerItem.product.base_price) + Number(v.current_price || v.price_delta)).toFixed(0)}
-                               </span>
-                             </button>
-                           ))
-                        ) : (
-                           getVariationsForItem(managerItem).map(v => (
-                             <button 
-                               key={`${v.label}-${v.value}`}
-                               onClick={() => {
-                                 const isCalculatorRequired = v.label.includes('750') || v.label.includes('Custom');
-                                 if (isCalculatorRequired) {
-                                   handleCustomPricing(v);
-                                 } else {
-                                   addToCartFromManager({ 
-                                     ...managerItem, 
-                                     variant: null, 
-                                     qty: v.value, 
-                                     unitInfo: v,
-                                     customPrice: null 
-                                   });
-                                 }
-                               }}
-                               className={cn(
-                                 "min-w-[80px] h-[56px] px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap",
-                                 managerItem.unitInfo?.label === v.label && !managerItem.customPrice
-                                   ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 z-10" 
-                                   : "text-atul-charcoal hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
-                               )}
-                             >
-                               <span className="leading-none text-[13px]">{format100g(v.label, 1)}</span>
-                               <span className={cn("font-bold text-[11px] mt-0.5 transition-all", (managerItem.unitInfo?.label === v.label && !managerItem.customPrice) ? "text-white opacity-100" : "text-atul-pink_primary opacity-80")}>
-                                 ₹{calculateItemPrice({ ...managerItem, qty: v.value, unitInfo: v }).toFixed(0)}
-                               </span>
-                             </button>
-                           ))
-                        )}
+                            return (variationsToDisplay || []).map((v, i) => (
+                              <button 
+                                key={`${v.label}-${i}`}
+                                disabled={!managerItem}
+                                onClick={() => {
+                                  if (!managerItem) return;
+                                  const isCalculatorRequired = v.label.includes('750');
+                                  if (isCalculatorRequired) {
+                                    handleCustomPricing(v);
+                                  } else {
+                                    addToCartFromManager({ ...managerItem, variant: null, qty: v.value, customPrice: null });
+                                  }
+                                }}
+                                className={cn(
+                                  "min-w-24 h-16 px-4 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap border-2",
+                                  !managerItem
+                                    ? "bg-white border-gray-50 opacity-80 shadow-sm cursor-default" 
+                                    : managerItem.qty === v.value && !managerItem.customPrice && !managerItem.variant
+                                      ? "bg-atul-pink_primary border-atul-pink_primary text-white shadow-lg" 
+                                      : "bg-white border-transparent text-atul-charcoal/80 hover:border-atul-pink_soft shadow-sm font-bold text-[13px]"
+                                )}
+                              >
+                                <span className={cn("leading-none font-bold", !managerItem && "text-atul-charcoal/50")}>{format100g(v.label, 1)}</span>
+                                <span className={cn("text-[11px] font-black mt-0.5 text-atul-pink_primary", (managerItem?.qty === v.value && !managerItem?.customPrice && !managerItem?.variant) && "text-white/90", !managerItem && "text-atul-charcoal/30")}>
+                                  {(managerItem && managerItem.qty !== null) ? `₹${(calculateItemPrice(managerItem) * v.value).toFixed(0)}` : "--"}
+                                </span>
+                              </button>
+                            ));
+                         })()}
 
-                        {/* Special Custom Option */}
-                        {managerItem && (
-                          <button 
-                            onClick={() => handleCustomPricing({ label: 'Custom', value: 'custom' })}
-                            className={cn(
-                              "min-w-[100px] h-[56px] px-4 rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ml-2",
-                              managerItem.customPrice
+                        {/* Custom Button */}
+                        <button 
+                          disabled={!managerItem}
+                          onClick={() => handleCustomPricing({ label: 'Custom', value: 'custom' })}
+                          className={cn(
+                            "min-w-24 h-16 px-4 rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5",
+                            !managerItem
+                              ? "bg-white border-gray-200 opacity-80 shadow-sm cursor-default"
+                              : managerItem.customPrice
                                 ? "bg-atul-pink_primary border-atul-pink_primary text-white shadow-lg" 
-                                : "border-atul-pink_soft/40 text-atul-pink_primary hover:bg-atul-pink_primary/5 font-extrabold text-[12px]"
-                            )}
-                          >
-                            <span className="leading-none text-[13px] uppercase">Custom</span>
-                            {managerItem.customPrice && (
-                               <span className="text-[10px] font-bold opacity-80">
-                                 {managerItem.qty < 1 ? `${(managerItem.qty * 1000).toFixed(0)}g` : `${managerItem.qty}kg`}
-                                 {` · ₹${(calculateItemPrice(managerItem) * managerItem.qty).toFixed(0)}`}
-                               </span>
-                            )}
-                          </button>
-                        )}
+                                : "bg-white border-atul-pink_soft/40 text-atul-pink_primary hover:bg-atul-pink_primary/5 font-black text-[12px] uppercase shadow-sm"
+                          )}
+                        >
+                          <span className={cn("leading-none font-bold", !managerItem && "text-atul-charcoal/50")}>Custom</span>
+                          <span className={cn("text-[10px] opacity-80 font-bold", !managerItem && "text-atul-charcoal/30")}>
+                            {!managerItem ? "--" : (managerItem.customPrice ? `₹${(calculateItemPrice(managerItem) * managerItem.qty).toFixed(0)}` : "--")}
+                          </span>
+                        </button>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-3 ml-6">
-                     <button onClick={() => setManagerItem(null)} className="size-14 bg-white border-2 border-gray-50 rounded-[1.5rem] flex items-center justify-center text-atul-gray-300 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer">
-                        <X size={24}/>
-                     </button>
+                    {/* Segment 2: Item Info (Middle) */}
+                    <div className="shrink-0 flex flex-col justify-center min-w-[160px] max-w-[260px]">
+                      <h4 className="text-[20px] font-black text-atul-charcoal leading-tight tracking-tight truncate" title={managerItem?.product?.name || '--'}>
+                        {managerItem?.product?.name || '--'}
+                      </h4>
+                      <p className="text-[12px] font-bold text-atul-pink_primary mt-1.5 flex items-center gap-1">
+                        Rate: <span className="opacity-80">
+                          {(managerItem && managerItem.qty !== null) ? (() => {
+                            const price = calculateItemPrice(managerItem);
+                            const label = managerItem.variant
+                              ? (managerItem.variant.name || 'Qty')
+                              : (managerItem.unitInfo?.label || (managerItem.qty < 1 ? `${managerItem.qty * 1000}g` : 'Qty'));
+                            return `₹${price.toFixed(0)}/${label}`;
+                          })() : (managerItem ? '← Select a variation' : '₹--/Qty')}
+                        </span>
+                      </p>
+                    </div>
 
+                    {/* Segment 3: Stock Info (Right) */}
+                    <div className="flex items-center gap-4 ml-auto">
+                      {managerItem ? (
+                        <div className="bg-white px-6 py-2.5 rounded-full border border-atul-pink_soft/20 shadow-sm flex items-center gap-5">
+                          <span className="text-[11px] font-black text-atul-charcoal/40 uppercase tracking-[0.2em] whitespace-nowrap">
+                            Available Stock :
+                          </span>
+                          <div className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl border border-emerald-100 flex items-center gap-3">
+                            <div className="bg-emerald-500 rounded-lg p-1 text-white">
+                               <Check size={14} strokeWidth={4} />
+                            </div>
+                            <span className="text-[18px] font-black tabular-nums tracking-tight">
+                              {(() => {
+                                const key = managerItem.variant ? `${managerItem.product.id}_${managerItem.variant.id}` : `${managerItem.product.id}`;
+                                const info = stockMap[key] || stockMap[managerItem.product.id];
+                                return info?.quantity || '0.00';
+                              })()}
+                              <span className="text-[11px] ml-1.5 font-bold opacity-60 uppercase">{managerItem.product?.unit || 'KG'}</span>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="opacity-10 pointer-events-none pr-10">
+                           <MI name="inventory" className="text-5xl" />
+                        </div>
+                      )}
+
+                      {/* Close Action */}
+                      <button 
+                        onClick={() => setManagerItem(null)} 
+                        className="size-16 bg-white border border-gray-100 rounded-full flex items-center justify-center text-atul-gray-300 hover:text-red-500 hover:bg-red-50 transition-all shadow-sm group"
+                      >
+                         <X size={28} className="group-hover:rotate-90 transition-transform duration-300" />
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               </div>
@@ -1900,52 +1989,108 @@ const PrintTemplates = ({ lastOrder, receiptRef }) => {
   return (
     <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', height: '0', overflow: 'hidden' }}>
         {/* ── Epson 80mm Premium Receipt Template ── */}
-        <div ref={receiptRef} style={{ display: 'block', width: '45mm', fontFamily: "'Courier New', Courier, monospace", background: 'white', color: '#000', margin: '0' }}>
+        {/* ── Epson 80mm Premium Receipt Template ── */}
+        <div ref={receiptRef} style={{ 
+          display: 'block', 
+          width: '72mm', 
+          fontFamily: "'Courier New', Courier, monospace", 
+          background: 'white', 
+          color: '#000', 
+          margin: '0', 
+          padding: '2mm',
+          lineHeight: '1.1',
+          fontSize: '10px'
+        }}>
           <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>ATUL ICE CREAM</div>
-            <div style={{ fontSize: '8px' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
-            <div style={{ fontSize: '8px' }}>PH: {r.outlet?.phone || '+91 98257 58887'}</div>
-            <div style={{ fontSize: '7px' }}>GST: {r.outlet?.gstin || '24AAAAA0000A1Z5'}</div>
+            <div style={{ fontSize: '16px', fontWeight: '900', marginBottom: '2px' }}>ATUL ICE CREAM</div>
+            <div style={{ fontSize: '10px', fontWeight: '700' }}>{r.outlet?.name || 'Vastrapur Outlet'}</div>
+            <div style={{ fontSize: '9px' }}>{r.outlet?.address || ''}</div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>PH: {r.outlet?.phone || '+91 98257 58887'}</div>
+            {r.outlet?.gstin && <div style={{ fontSize: '9px', marginTop: '2px' }}>GSTIN: {r.outlet.gstin}</div>}
           </div>
 
-          <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', textAlign: 'center', fontSize: '10px', padding: '2px 0', margin: '5px 0' }}>
-            INVOICE: {lastOrder.order_number?.slice(-6)}
+          <div style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', textAlign: 'center', fontSize: '11px', fontWeight: '900', padding: '3px 0', margin: '6px 0', textTransform: 'uppercase' }}>
+            Tax Invoice
           </div>
 
-          <div style={{ fontSize: '8px', marginBottom: '5px' }}>
-            {new Date(lastOrder.created_at).toLocaleDateString()} {new Date(lastOrder.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+          <div style={{ fontSize: '10px', marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Bill: <b>#{lastOrder.order_number?.slice(-6)}</b></span>
+              <span>Type: <b>{lastOrder.order_type?.toUpperCase()}</b></span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Date: {new Date(lastOrder.created_at).toLocaleDateString('en-GB')}</span>
+              <span>Time: {new Date(lastOrder.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+            {lastOrder.cashier && <div>Cashier: {lastOrder.cashier}</div>}
           </div>
 
-          <div style={{ borderBottom: '1px solid #000', marginBottom: '5px' }}></div>
+          <div style={{ borderTop: '1px dashed #000', margin: '6px 0' }}></div>
 
-          {(r.items || []).map((item, i) => (
-            <div key={i} style={{ marginBottom: '8px', fontSize: '9px' }}>
-              <div style={{ fontWeight: 'bold' }}>{item.product_name}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{item.quantity} x {Number(item.item_subtotal / item.quantity).toFixed(0)}</span>
-                <span style={{ fontWeight: 'bold' }}>{Number(item.item_subtotal).toFixed(0)}</span>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', display: 'flex', marginBottom: '4px' }}>
+            <div style={{ flex: 1 }}>ITEM DESCRIPTION</div>
+            <div style={{ width: '8mm', textAlign: 'center' }}>QTY</div>
+            <div style={{ width: '15mm', textAlign: 'right' }}>AMT</div>
+          </div>
+
+          <div style={{ borderBottom: '1px solid #000', marginBottom: '6px' }}></div>
+
+          {(r.items || []).map((item, i) => {
+            const unit = (item.unit_label || item.variant_name || '').trim();
+            const qty  = parseFloat(item.quantity || 1);
+            let qtyDisplay;
+            if (!unit || unit === 'pc(s)' || unit.toLowerCase() === 'pcs' || unit.toLowerCase() === 'pc') {
+              qtyDisplay = qty % 1 === 0 ? String(qty) : qty.toFixed(2);
+            } else if (/^\d/.test(unit)) {
+              qtyDisplay = unit;
+            } else {
+              qtyDisplay = `${qty % 1 === 0 ? qty : qty.toFixed(2)} ${unit}`;
+            }
+            const price  = Number(item.unit_price || 0);
+            const amount = Number(item.item_total || item.item_subtotal || (qty * price));
+            return (
+              <div key={i} style={{ marginBottom: '8px', fontSize: '10px' }}>
+                <div style={{ fontWeight: '700', textTransform: 'uppercase' }}>{item.product_name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{qtyDisplay} x {price.toFixed(2)}</span>
+                  <span style={{ fontWeight: '900' }}>{amount.toFixed(2)}</span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          <div style={{ borderTop: '1px solid #000', marginTop: '5px', paddingTop: '5px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
+          <div style={{ borderTop: '1px solid #000', marginTop: '8px', paddingTop: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '2px' }}>
               <span>SUBTOTAL:</span>
-              <span>{Number(r.totals?.subtotal).toFixed(0)}</span>
+              <span>{Number(r.totals?.subtotal).toFixed(2)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
-              <span>TAX(5%):</span>
-              <span>{Number(r.totals?.cgst + r.totals?.sgst).toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold', marginTop: '5px' }}>
-              <span>TOTAL:</span>
-              <span>₹{Number(r.totals?.total).toFixed(0)}</span>
+            {r.totals?.discount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '2px' }}>
+                <span>DISCOUNT:</span>
+                <span>-{Number(r.totals.discount).toFixed(2)}</span>
+              </div>
+            )}
+            {(r.totals?.cgst > 0 || r.totals?.sgst > 0) && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '2px' }}>
+                  <span>CGST (2.5%):</span>
+                  <span>{Number(r.totals.cgst).toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '2px' }}>
+                  <span>SGST (2.5%):</span>
+                  <span>{Number(r.totals.sgst).toFixed(2)}</span>
+                </div>
+              </>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '900', marginTop: '4px', borderTop: '1px solid #000', paddingTop: '4px' }}>
+              <span>NET TOTAL:</span>
+              <span>₹{Number(r.totals?.total).toFixed(2)}</span>
             </div>
           </div>
 
-          <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '8px' }}>
-            *** THANK YOU ***
-            <div style={{ marginTop: '5px' }}>visit again!</div>
+          <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '9px', borderTop: '1px dashed #000', paddingTop: '10px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '3px' }}>THANK YOU! VISIT AGAIN</div>
+            <div>www.atulicecream.com</div>
           </div>
           <div style={{ height: '30px' }}></div>
         </div>

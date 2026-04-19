@@ -151,3 +151,20 @@ try:
     from apps.accounts.models_advanced import Client, Role, Permission, APIToken, UserActivity, ClientSettings
 except ImportError:
     pass
+
+
+class POSTerminalKey(models.Model):
+    """API Key for Electron POS terminal — no login required."""
+    key        = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    name       = models.CharField(max_length=100, help_text='e.g. "Counter 1"')
+    outlet     = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='pos_keys')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    is_active  = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} — {self.outlet.name}"

@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig:   () => ipcRenderer.invoke('get-config'),
   setPrinter:  (name) => ipcRenderer.invoke('set-printer', name),
   rerunSetup:  () => ipcRenderer.invoke('rerun-setup'),
+
+  // ESC/POS print via Node.js http (bypasses renderer fetch/CORS)
+  printEscPos: (data, printerName, port) => ipcRenderer.invoke('print-escpos', data, printerName, port),
 });

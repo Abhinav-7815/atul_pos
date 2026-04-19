@@ -28,8 +28,8 @@ ALIGN_L    = ESC + b'a\x00'
 ALIGN_C    = ESC + b'a\x01'
 BOLD_ON    = ESC + b'E\x01'
 BOLD_OFF   = ESC + b'E\x00'
-DOUBLE_ON  = ESC + b'!\x11'   # double height only
-DOUBLE_OFF = ESC + b'!\x00'
+BOLD_WIDE  = ESC + b'!\x38'   # bold + double width + double height (0x38 = bit 3+4+5)
+NORMAL     = ESC + b'!\x00'
 CUT        = b'\x1d\x56\x41\x05'
 LEFT_MARGIN = b'\x1d\x4c\x18\x00'
 # ───────────────────────────────────────────────────────────────
@@ -50,22 +50,71 @@ def three_col(left, mid, right, width=LINE_WIDTH):
     return left[:left_w].ljust(left_w) + mid.center(mid_w) + right.rjust(right_w)
 
 
+def four_col(name, qty, rate, amt, width=LINE_WIDTH):
+    # ITEM(18) | QTY(8) | RATE(7) | AMT(9)
+    name_w, qty_w, rate_w, amt_w = 18, 8, 7, 9
+    lines = []
+    # If name fits in one line
+    if len(name) <= name_w:
+        lines.append(name.ljust(name_w) +
+                     qty[:qty_w].center(qty_w) +
+                     rate[:rate_w].center(rate_w) +
+                     amt[:amt_w].rjust(amt_w))
+    else:
+        # First line: name part 1 + qty + rate + amt
+        lines.append(name[:name_w].ljust(name_w) +
+                     qty[:qty_w].center(qty_w) +
+                     rate[:rate_w].center(rate_w) +
+                     amt[:amt_w].rjust(amt_w))
+        # Second line: remaining name only
+        lines.append(name[name_w:name_w*2].strip())
+    return "\n".join(lines)
+
+
 def sep(char="-"):
     return char * LINE_WIDTH
 
 
+# Variant name → display label mapping
+UNIT_DISPLAY = {
+    "100gm":  "1 Cup",
+    "100 gm": "1 Cup",
+    "100gms":  "1 Cup",
+    "100 gms": "1 Cup",
+    "100g":   "1 Cup",
+    "200gm":  "2 Cups",
+    "200 gm": "2 Cups",
+    "200gms":  "2 Cups",
+    "200 gms": "2 Cups",
+    "250gm":  "250 Gms",
+    "250 gm": "250 Gms",
+    "250gms": "250 Gms",
+    "250 gms":"250 Gms",
+    "500gm":  "500 Gms",
+    "500 gm": "500 Gms",
+    "500gms": "500 Gms",
+    "500 gms":"500 Gms",
+    "1kg":    "1 KG",
+    "1 kg":   "1 KG",
+}
+
+def normalize_unit(unit: str) -> str:
+    return UNIT_DISPLAY.get(unit.strip().lower(), unit)
+
 def print_receipt(printer_name: str, data: dict):
     outlet     = data.get("outlet", {})
-    shop_name  = outlet.get("name",     "ATUL ICE CREAM")
-    shop_sub   = outlet.get("sub_name", "ATUL ICE CREAM - RAJKOT")
-    shop_addr  = outlet.get("address",  "Opp. Bhaktinagar Police Station,")
-    shop_addr2 = outlet.get("address2", "Kothariya Main Rd, nr. Nilkan Cinema,")
-    shop_phone = outlet.get("phone",    "9825758887")
-    shop_gstin = outlet.get("gstin",    "24AAAAA0000A1Z5")
+    shop_name  = outlet.get("name",  "ATUL ICE CREAM")
+    shop_addr  = outlet.get("address", "")
+    shop_city  = outlet.get("city",  "")
+    shop_phone = outlet.get("phone", "")
+    shop_gstin = outlet.get("gstin", "")
+    shop_fssai = outlet.get("fssai", "")
 
-    bill_no    = str(data.get("order_number", ""))
-    order_type = str(data.get("order_type",   "DINE")).upper()
-    cashier    = data.get("cashier", "")
+    bill_no        = str(data.get("order_number", ""))
+    order_type     = str(data.get("order_type",   "DINE")).upper()
+    cashier        = data.get("cashier", "")
+    customer_phone = data.get("customer_phone", "")
+    customer_name  = data.get("customer_name", "")
 
     date_val = data.get("date", "")
     try:
@@ -89,16 +138,21 @@ def print_receipt(printer_name: str, data: dict):
     p._raw(LEFT_MARGIN)
 
     # ── HEADER ──────────────────────────────────────────────
-    p._raw(ALIGN_C + BOLD_ON + DOUBLE_ON)
+    p._raw(ALIGN_C + BOLD_WIDE)
     p._raw(enc(shop_name + "\n"))
-    p._raw(DOUBLE_OFF + BOLD_OFF)
+    p._raw(NORMAL)
 
     p._raw(ALIGN_C)
-    p._raw(enc(shop_sub + "\n"))
-    p._raw(enc(shop_addr + "\n"))
-    p._raw(enc(shop_addr2 + "\n"))
-    p._raw(enc(f"PH: {shop_phone}\n"))
-    p._raw(enc(f"GSTIN: {shop_gstin}\n"))
+    if shop_addr:
+        p._raw(enc(shop_addr + "\n"))
+    if shop_city:
+        p._raw(enc(shop_city + "\n"))
+    if shop_phone:
+        p._raw(enc(f"PH: {shop_phone}\n"))
+    if shop_gstin:
+        p._raw(enc(f"GSTIN: {shop_gstin}\n"))
+    if shop_fssai:
+        p._raw(enc(f"FSSAI: {shop_fssai}\n"))
     p._raw(enc(sep(".") + "\n"))
 
     # ── TAX INVOICE ─────────────────────────────────────────
@@ -110,23 +164,41 @@ def print_receipt(printer_name: str, data: dict):
     p._raw(enc(two_col(f"Date: {date_str}", f"Time: {time_str}") + "\n"))
     if cashier:
         p._raw(enc(f"Cashier: {cashier}\n"))
+    if customer_name:
+        p._raw(enc(f"Customer: {customer_name}\n"))
+    if customer_phone:
+        p._raw(enc(f"Mobile: {customer_phone}\n"))
     p._raw(enc(sep(".") + "\n"))
 
     # ── ITEMS HEADER ────────────────────────────────────────
     p._raw(BOLD_ON)
-    p._raw(enc(three_col("ITEM Description", "QTY", "Amt") + "\n"))
+    p._raw(enc(four_col("ITEM", "QTY", "RATE", "AMOUNT") + "\n"))
     p._raw(BOLD_OFF)
     p._raw(enc(sep(".") + "\n"))
 
     # ── ITEMS ───────────────────────────────────────────────
     for item in items:
         name   = item.get("product_name") or item.get("name") or "Item"
-        unit   = item.get("unit_label", "Units")
-        qty    = float(item.get("quantity",   1))
+        unit   = normalize_unit(item.get("unit_label", ""))
+        qty    = float(item.get("quantity", 1))
         price  = float(item.get("unit_price") or item.get("price") or 0)
         amount = float(item.get("item_total") or item.get("item_subtotal") or (qty * price))
 
-        p._raw(enc(three_col(name, f"{qty} {unit}", f"{amount:.2f}/-") + "\n"))
+        qty_int = int(qty) if qty == int(qty) else qty
+        # Generic units — show only number
+        generic = not unit or unit.lower() in ("pc(s)", "pcs", "pc", "units", "unit", "piece", "pieces")
+        if generic:
+            qty_str = str(qty_int)
+        elif unit and unit[0].isdigit():
+            # "250 Gms", "500 Gms", "1 Kg" — unit already has size info, skip qty prefix
+            qty_str = unit
+        else:
+            # "Cup", "Cone" etc — prefix with qty: "1 Cup", "3 Cup"
+            qty_str = f"{qty_int} {unit}"
+
+        p._raw(ESC + b'!\x18')
+        p._raw(enc(four_col(name, qty_str, f"{price:.2f}", f"{amount:.2f}/-") + "\n"))
+        p._raw(NORMAL)
 
     p._raw(enc(sep(".") + "\n"))
 
@@ -136,9 +208,9 @@ def print_receipt(printer_name: str, data: dict):
     p._raw(enc(two_col(f"SGST ({SGST_RATE}%)", f"{sgst_amt:.2f}/-") + "\n"))
     p._raw(enc(sep(".") + "\n"))
 
-    p._raw(BOLD_ON)
+    p._raw(BOLD_ON + ESC + b'!\x18')   # bold + double height + double width
     p._raw(enc(two_col("NET PAYABLE", f"{net_pay:.2f}/-") + "\n"))
-    p._raw(BOLD_OFF)
+    p._raw(NORMAL)
     p._raw(enc(sep(".") + "\n"))
 
     # ── FOOTER ──────────────────────────────────────────────

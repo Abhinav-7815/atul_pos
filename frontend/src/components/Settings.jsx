@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { outletApi, userApi } from '../services/api';
+import { outletApi, userApi, posKeyApi, POS_KEY_STORAGE } from '../services/api';
 import {
   Store,
   Receipt,
@@ -26,6 +26,11 @@ import {
   Shield,
   Printer,
   RefreshCw,
+  Key,
+  Copy,
+  Plus,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -34,7 +39,9 @@ function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-export default function Settings({ user, onUpdateUser }) {
+export default function Settings({ user, onUpdateUser, electronKeyMode, onKeySet }) {
+  if (electronKeyMode) return <ElectronSettings onKeySet={onKeySet} />;
+
   const [outlet, setOutlet] = useState({ 
     name: '', 
     phone: '', 
@@ -241,7 +248,7 @@ export default function Settings({ user, onUpdateUser }) {
           <h2 className="font-serif text-3xl font-bold">Terminal Settings</h2>
           <p className="text-atul-pink_primary/60 text-sm mt-1">Configure your outlet profile and receipt preferences</p>
         </div>
-        {activeTab !== 'users' && (
+        {activeTab !== 'users' && activeTab !== 'poskeys' && (
           <button
             onClick={handleUpdate}
             disabled={saving}
@@ -260,6 +267,7 @@ export default function Settings({ user, onUpdateUser }) {
                { id: 'tax', label: 'Taxes & GST', icon: <Percent size={20}/> },
                { id: 'receipt', label: 'Receipt Designer', icon: <Receipt size={20}/> },
                { id: 'printer', label: 'Printer', icon: <Printer size={20}/> },
+               { id: 'poskeys', label: 'POS Terminal Keys', icon: <Key size={20}/> },
                { id: 'users', label: 'Users', icon: <Users size={20}/> },
              ].filter(Boolean).map(t => (
                <button
@@ -277,7 +285,7 @@ export default function Settings({ user, onUpdateUser }) {
 
           {/* Tab Content */}
           <div className="flex-1 glass rounded-[2.5rem] p-10 overflow-y-auto custom-scrollbar">
-             <form onSubmit={handleUpdate} className={`space-y-8 transition-all duration-500 max-w-2xl ${activeTab === 'users' ? 'hidden' : ''}`}>
+             <form onSubmit={handleUpdate} className={`space-y-8 transition-all duration-500 max-w-2xl ${(activeTab === 'users' || activeTab === 'poskeys') ? 'hidden' : ''}`}>
                 
                 {activeTab === 'general' && (
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -668,6 +676,9 @@ export default function Settings({ user, onUpdateUser }) {
 
              </form>
 
+             {/* POS Keys Tab */}
+             {activeTab === 'poskeys' && <POSKeysTab />}
+
              {/* Users Tab — outside <form> to avoid nested form conflict */}
              {activeTab === 'users' && (
                <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8 pb-10 max-w-2xl">
@@ -775,33 +786,235 @@ export default function Settings({ user, onUpdateUser }) {
   );
 }
 
-// ─── Printer Settings Component ───────────────────────────────────────────────
-function PrinterSettings() {
-  const isElectron = navigator.userAgent.includes('AtulPOS-Electron');
-  const [printers, setPrinters]       = useState([]);
-  const [selected, setSelected]       = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [saved, setSaved]             = useState(false);
-  const [testStatus, setTestStatus]   = useState('');
+// ─── POS Terminal Keys Tab ────────────────────────────────────────────────────
+function POSKeysTab() {
+  const [keys, setKeys] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(null);
 
-  useEffect(() => { fetchPrinters(); }, []);
-
-  async function fetchPrinters() {
+  const fetchKeys = async () => {
     setLoading(true);
     try {
-      if (isElectron) {
-        // IPC via preload
-        const list = await window.electronAPI.getPrinters();
-        const cfg  = await window.electronAPI.getConfig();
-        setPrinters(list || []);
-        setSelected(cfg?.printerName || '');
-      } else {
-        // HTTP fallback (print server running separately)
-        const res  = await fetch('http://127.0.0.1:9191/printers');
-        const data = await res.json();
-        setPrinters(data.printers || []);
-        setSelected(data.selected || '');
-      }
+      const res = await posKeyApi.list();
+      setKeys(res.data?.data || res.data?.results || res.data || []);
+    } catch { setKeys([]); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchKeys(); }, []);
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    try {
+      await posKeyApi.create(newName.trim());
+      setNewName('');
+      fetchKeys();
+    } catch (e) { alert('Failed to create key: ' + (e.response?.data?.detail || e.message)); }
+    finally { setCreating(false); }
+  };
+
+  const handleToggle = async (k) => {
+    try {
+      await posKeyApi.toggle(k.id, !k.is_active);
+      fetchKeys();
+    } catch { alert('Failed to toggle key.'); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this API key? EXE terminals using it will stop working.')) return;
+    try { await posKeyApi.remove(id); fetchKeys(); }
+    catch { alert('Failed to delete key.'); }
+  };
+
+  const copyKey = (keyVal) => {
+    navigator.clipboard.writeText(keyVal).then(() => {
+      setCopied(keyVal);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6 max-w-2xl pb-10">
+      <h3 className="text-xl font-serif font-bold flex items-center gap-3">
+        <div className="size-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600"><Key size={20}/></div>
+        POS Terminal Keys
+      </h3>
+      <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-sm text-green-800">
+        Generate API keys here and paste them into the EXE app's Settings page. Each key authenticates the desktop terminal without requiring a login.
+      </div>
+
+      {/* Create new key */}
+      <div className="flex gap-3">
+        <input
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleCreate()}
+          placeholder="Terminal name (e.g. Counter 1)"
+          className="flex-1 bg-gray-50/50 border-white border-2 rounded-2xl px-4 py-3 font-bold outline-none focus:border-atul-pink_primary/20"
+        />
+        <button
+          onClick={handleCreate}
+          disabled={creating || !newName.trim()}
+          className="flex items-center gap-2 px-5 py-3 bg-atul-pink_primary text-white rounded-2xl font-bold text-sm disabled:opacity-40 hover:opacity-90 transition-all"
+        >
+          {creating ? <RefreshCw size={16} className="animate-spin"/> : <Plus size={16}/>}
+          Generate
+        </button>
+      </div>
+
+      {/* Key list */}
+      {loading ? (
+        <div className="text-sm text-gray-400 animate-pulse">Loading keys...</div>
+      ) : keys.length === 0 ? (
+        <div className="text-sm text-gray-400">No keys generated yet.</div>
+      ) : (
+        <div className="space-y-3">
+          {keys.map(k => (
+            <div key={k.id} className={cn("flex items-center gap-4 p-4 rounded-2xl border", k.is_active ? "bg-white border-white" : "bg-gray-50 border-gray-200 opacity-60")}>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm text-atul-charcoal">{k.name}</p>
+                <p className="text-[11px] font-mono text-gray-400 truncate mt-0.5">{k.key}</p>
+                {k.last_used && <p className="text-[10px] text-gray-300 mt-0.5">Last used: {new Date(k.last_used).toLocaleString()}</p>}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => copyKey(k.key)}
+                  className="size-9 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                  title="Copy key"
+                >
+                  {copied === k.key ? <CheckCircle size={16} className="text-green-500"/> : <Copy size={15}/>}
+                </button>
+                <button
+                  onClick={() => handleToggle(k)}
+                  className={cn("size-9 rounded-xl flex items-center justify-center transition-colors", k.is_active ? "bg-green-50 text-green-600 hover:bg-green-100" : "bg-gray-100 text-gray-400 hover:bg-gray-200")}
+                  title={k.is_active ? 'Deactivate' : 'Activate'}
+                >
+                  {k.is_active ? <ToggleRight size={18}/> : <ToggleLeft size={18}/>}
+                </button>
+                <button
+                  onClick={() => handleDelete(k.id)}
+                  className="size-9 rounded-xl bg-red-50 flex items-center justify-center text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                  title="Delete key"
+                >
+                  <Trash2 size={15}/>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Electron Settings (EXE mode — no login, just API key + printer) ──────────
+function ElectronSettings({ onKeySet }) {
+  const [keyInput, setKeyInput] = useState(localStorage.getItem(POS_KEY_STORAGE) || '');
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    const trimmed = keyInput.trim();
+    localStorage.setItem(POS_KEY_STORAGE, trimmed);
+    if (onKeySet) onKeySet(trimmed);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  return (
+    <div className="flex-1 p-8 h-screen overflow-hidden flex flex-col text-atul-charcoal">
+      <header className="mb-8">
+        <h2 className="font-serif text-3xl font-bold">Terminal Settings</h2>
+        <p className="text-atul-pink_primary/60 text-sm mt-1">Configure API key and printer for this POS terminal</p>
+      </header>
+      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-8 max-w-xl">
+        {/* API Key section */}
+        <div className="glass rounded-[2.5rem] p-8 space-y-5">
+          <h3 className="text-xl font-serif font-bold flex items-center gap-3">
+            <div className="size-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600"><Key size={20}/></div>
+            API Key
+          </h3>
+          <p className="text-sm text-gray-500">
+            Generate a key from the web admin panel (Settings → POS Terminal Keys) and paste it here.
+          </p>
+          <div>
+            <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">API Key</label>
+            <input
+              value={keyInput}
+              onChange={e => setKeyInput(e.target.value)}
+              placeholder="Paste your API key here..."
+              className="w-full bg-gray-50/50 border-white border-2 rounded-2xl p-4 font-mono text-sm outline-none focus:border-atul-pink_primary/20"
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={!keyInput.trim()}
+            className="flex items-center gap-2 bg-atul-pink_primary text-white px-8 py-3 rounded-3xl font-bold shadow-lg shadow-atul-pink_primary/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-40"
+          >
+            {saved ? <><CheckCircle size={18}/> Key Saved!</> : <><Save size={18}/> Save Key</>}
+          </button>
+          {keyInput && (
+            <div className={cn("flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-bold w-fit", saved ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")}>
+              <Key size={15}/>
+              {saved ? 'Key active — terminal is authorized' : 'Save to activate this key'}
+            </div>
+          )}
+        </div>
+
+        {/* Printer section */}
+        <div className="glass rounded-[2.5rem] p-8">
+          <PrinterSettings />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Printer Settings Component ───────────────────────────────────────────────
+const PRINTER_KEY  = 'atul_printer_name';
+const PORT_KEY     = 'atul_print_server_port';
+const DEFAULT_PORT = '9192';
+const PRINT_MODE_KEY = 'atul_print_mode';
+
+function getPrintServerUrl() {
+  const port = localStorage.getItem(PORT_KEY) || DEFAULT_PORT;
+  return `http://127.0.0.1:${port}`;
+}
+
+function PrinterSettings() {
+  const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
+  const [printers, setPrinters]     = useState([]);
+  const [selected, setSelected]     = useState('');
+  const [port, setPort]             = useState(localStorage.getItem(PORT_KEY) || DEFAULT_PORT);
+  const [portInput, setPortInput]   = useState(localStorage.getItem(PORT_KEY) || DEFAULT_PORT);
+  const [printMode, setPrintModeState] = useState(localStorage.getItem(PRINT_MODE_KEY) || 'escpos');
+  const [loading, setLoading]       = useState(false);
+  const [saved, setSaved]           = useState(false);
+  const [portSaved, setPortSaved]   = useState(false);
+  const [testStatus, setTestStatus] = useState('');
+
+  function savePrintMode(mode) {
+    localStorage.setItem(PRINT_MODE_KEY, mode);
+    setPrintModeState(mode);
+  }
+
+  useEffect(() => {
+    const savedPrinter = localStorage.getItem(PRINTER_KEY) || '';
+    setSelected(savedPrinter);
+    fetchPrinters(savedPrinter);
+  }, []);
+
+  async function fetchPrinters(currentSelected) {
+    setLoading(true);
+    try {
+      const serverUrl = getPrintServerUrl();
+      const res  = await fetch(`${serverUrl}/printers`, { signal: AbortSignal.timeout(2000) });
+      const data = await res.json();
+      const list = data.printers || [];
+      setPrinters(list);
+      if (!currentSelected && list.length > 0) setSelected(list[0]);
     } catch {
       setPrinters([]);
     } finally {
@@ -809,45 +1022,67 @@ function PrinterSettings() {
     }
   }
 
-  async function savePrinter() {
-    try {
-      if (isElectron) {
-        await window.electronAPI.setPrinter(selected);
-      } else {
-        await fetch('http://127.0.0.1:9191/set-printer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ printerName: selected }),
-        });
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      alert('Save failed: ' + e.message);
-    }
+  function savePort() {
+    const p = portInput.trim();
+    if (!p || isNaN(Number(p)) || Number(p) < 1024 || Number(p) > 65535) return;
+    localStorage.setItem(PORT_KEY, p);
+    setPort(p);
+    setPortSaved(true);
+    setTimeout(() => setPortSaved(false), 2000);
+    // Reload printer list from new port
+    fetchPrinters(selected);
+  }
+
+  function savePrinter() {
+    localStorage.setItem(PRINTER_KEY, selected);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   async function testPrint() {
+    const printerName = selected || localStorage.getItem(PRINTER_KEY) || 'EPSON TM-T82 Receipt';
+    const mode = localStorage.getItem(PRINT_MODE_KEY) || 'escpos';
     setTestStatus('printing...');
     try {
-      const testData = {
-        outlet:       { name: 'ATUL ICE CREAM', address: 'Test Mode', phone: '9825758887', gstin: '' },
-        order_number: 'TEST-0001',
-        date:         new Date().toISOString(),
-        cashier:      'System',
-        order_type:   'dine_in',
-        items:        [{ product_name: 'Vanilla Cup', quantity: 1, unit_price: 38, item_total: 38 }],
-        totals:       { subtotal: 38, cgst: 0.95, sgst: 0.95, discount: 0, total: 39.90 },
-      };
-      const res = await fetch('http://127.0.0.1:9191/print', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testData),
-      });
-      const data = await res.json();
-      setTestStatus(data.success ? 'Printed!' : ('Error: ' + data.error));
+      if (mode === 'html') {
+        // HTML test print — Electron silent print ya browser dialog
+        const testHtml = `<div style="font-family:Arial;font-size:12px;width:58mm;padding:4px;">
+          <div style="text-align:center;font-weight:bold;font-size:14px;">ATUL ICE CREAM</div>
+          <div style="text-align:center;font-size:10px;">Test Print — HTML Mode</div>
+          <hr/><div>Bill No: TEST-0001</div>
+          <div style="display:flex;justify-content:space-between;"><span>Vanilla Cup x1</span><span>₹38</span></div>
+          <hr/><div style="display:flex;justify-content:space-between;font-weight:bold;"><span>Total</span><span>₹39.90</span></div>
+          <div style="text-align:center;margin-top:8px;font-size:10px;">Thank You! Visit Again</div>
+        </div>`;
+        const res = await fetch('http://127.0.0.1:9191/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ html: testHtml }),
+        });
+        const data = await res.json();
+        setTestStatus(data.success ? 'Printed! (HTML)' : ('Error: ' + (data.error || 'unknown')));
+      } else {
+        // ESC/POS test print
+        const serverUrl = getPrintServerUrl();
+        const testData = {
+          outlet:       { name: 'ATUL ICE CREAM', address: 'Test Mode', phone: '9825758887', gstin: '' },
+          order_number: 'TEST-0001',
+          date:         new Date().toISOString(),
+          cashier:      'System',
+          order_type:   'DINE',
+          items:        [{ product_name: 'Vanilla Cup', quantity: 1, unit_price: 38, item_total: 38 }],
+          totals:       { subtotal: 38, cgst: 0.95, sgst: 0.95, discount: 0, total: 39.90 },
+        };
+        const res = await fetch(`${serverUrl}/print`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Printer-Name': printerName },
+          body:    JSON.stringify(testData),
+        });
+        const data = await res.json();
+        setTestStatus(data.success ? 'Printed! (ESC/POS)' : ('Error: ' + (data.error || 'unknown')));
+      }
     } catch {
-      setTestStatus('Print server not reachable');
+      setTestStatus(mode === 'html' ? 'Electron server not reachable (9191)' : `Print server not reachable (port ${port})`);
     }
     setTimeout(() => setTestStatus(''), 3000);
   }
@@ -868,6 +1103,35 @@ function PrinterSettings() {
         </div>
       )}
 
+      {/* Print Server Port */}
+      <div>
+        <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">
+          Print Server Port
+        </label>
+        <div className="flex gap-3">
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            value={portInput}
+            onChange={e => setPortInput(e.target.value)}
+            placeholder="9192"
+            className="w-36 bg-gray-50/50 border-white border-2 rounded-2xl px-4 py-3 font-bold outline-none focus:border-atul-pink_primary/20 text-center"
+          />
+          <button
+            onClick={savePort}
+            className="flex items-center gap-2 px-5 py-3 bg-atul-pink_primary text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all"
+          >
+            {portSaved ? <CheckCircle size={16} /> : <Save size={16} />}
+            {portSaved ? 'Saved!' : 'Set Port'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Print server ka port number. AtulPOS-PrintServer.exe mein jo port dikhaye wahi yahan set karo. Default: 9192
+        </p>
+      </div>
+
+      {/* Printer Selection */}
       <div>
         <label className="text-[10px] font-bold text-atul-pink_primary/60 uppercase tracking-widest block mb-2">
           Receipt Printer Select Karo
@@ -884,7 +1148,7 @@ function PrinterSettings() {
             ))}
           </select>
           <button
-            onClick={fetchPrinters}
+            onClick={() => fetchPrinters(selected)}
             className="px-4 py-3 bg-gray-100 rounded-2xl hover:bg-gray-200 transition-all"
             title="Refresh list"
           >
@@ -893,7 +1157,7 @@ function PrinterSettings() {
         </div>
         {loading && <p className="text-xs text-gray-400 mt-2">Printers load ho rahe hain...</p>}
         {printers.length === 0 && !loading && (
-          <p className="text-xs text-red-400 mt-2">Koi printer nahi mila. Windows printer settings check karo.</p>
+          <p className="text-xs text-red-400 mt-2">Koi printer nahi mila. Print server chal raha hai? Port check karo.</p>
         )}
       </div>
 
@@ -923,7 +1187,8 @@ function PrinterSettings() {
       )}
 
       <div className="bg-gray-50 rounded-2xl p-4 text-xs text-gray-500 space-y-1">
-        <p><strong>Currently saved:</strong> {selected || 'None'}</p>
+        <p><strong>Server:</strong> 127.0.0.1:{port}</p>
+        <p><strong>Printer:</strong> {selected || 'None'}</p>
         <p>Printer sirf ek baar set karo — phir har order pe automatically print niklegi.</p>
       </div>
     </motion.div>

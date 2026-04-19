@@ -3,7 +3,7 @@ import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation, useNav
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { menuApi, orderApi, authApi } from './services/api';
+import { menuApi, orderApi, authApi, getPOSKey, POS_KEY_STORAGE } from './services/api';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import POS from './components/POS';
@@ -58,6 +58,79 @@ const MaterialIcon = ({ name, className = "", fill = false }) => (
     {name}
   </span>
 );
+
+function ElectronApp() {
+  const [posKey, setPosKey] = useState(getPOSKey);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = useMemo(() => location.pathname.substring(1) || 'billing', [location.pathname]);
+
+  useEffect(() => {
+    const h = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
+
+  const handleKeySet = (key) => {
+    localStorage.setItem(POS_KEY_STORAGE, key);
+    setPosKey(key);
+  };
+
+  const fakeUser = { full_name: 'POS Terminal', outlet_name: 'Atul Ice Cream' };
+  const navItems = [
+    { id: 'billing', label: 'Billing POS', icon: 'point_of_sale' },
+    { id: 'settings', label: 'Settings', icon: 'settings' },
+  ];
+
+  return (
+    <div className="flex h-screen bg-[#FDF3F6] font-sans overflow-hidden">
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-50 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuAVBbRsaGYdCe_s-o8jqR9nJa_mthPmgAh0wURjtR78rPPofw-FjgEVlP1a1SZjvP5_caDNAiFJJn4T_HK9JUWMEfkCyowgFI_MqspIP1CiFvv4IkiRmENXYRPX2MJCCSMAUcVWDzEqcD_U9h0oktywI8neBaej-LZcAsDIlyxN_NCMyHtrhQTsnCyKKIQukpRURHFV5IO__JP1DVelhVWW2Q3SMKqacV1bSoLJ9a2d_4I_5RC5cvOn6mS-xtg64rCTeLnGVsCMyzI')]"></div>
+
+      {!(activeTab === 'billing' && isFullscreen) && (
+        <aside className="w-[220px] fixed h-screen border-r border-white/50 flex flex-col z-20 bg-transparent">
+          <div className="p-6 flex items-center gap-2">
+            <div className="size-9 bg-atul-pink_primary rounded-full shadow-sm flex items-center justify-center text-white">
+              <MaterialIcon name="icecream" fill className="text-[18px]" />
+            </div>
+            <div className="flex flex-col">
+              <h1 className="font-serif text-[16px] tracking-tight font-bold leading-none text-atul-pink_primary">Atul Ice Cream</h1>
+              <span className="text-[8px] uppercase tracking-[0.2em] font-bold text-atul-pink_primary/60 mt-0.5">Luxury POS</span>
+            </div>
+          </div>
+          <nav className="flex-1 mt-4 space-y-1.5 pr-5">
+            {navItems.map((item) => (
+              <button key={item.id}
+                onClick={() => { navigate(`/${item.id}`); if (item.id === 'billing') document.documentElement.requestFullscreen().catch(() => {}); }}
+                className={cn("w-full flex items-center gap-3 transition-all pl-6 pr-5",
+                  activeTab === item.id
+                    ? "bg-atul-pink_primary text-white shadow-lg shadow-atul-pink_primary/20 py-3 rounded-r-full"
+                    : "py-2.5 text-atul-charcoal/60 hover:bg-atul-pink_primary/5 hover:text-atul-pink_primary rounded-r-full"
+                )}>
+                <MaterialIcon name={item.icon} className="text-[20px]" fill={activeTab === item.id} />
+                <span className={cn("text-[13px] font-sans tracking-wide", activeTab === item.id ? "font-bold" : "font-semibold")}>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="pb-6 px-4">
+            <div className={cn("flex items-center gap-2 px-3 py-2 rounded-2xl text-xs font-bold", posKey ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500")}>
+              <MaterialIcon name={posKey ? "vpn_key" : "key_off"} className="text-[16px]" />
+              {posKey ? 'API Key Active' : 'No API Key Set'}
+            </div>
+          </div>
+        </aside>
+      )}
+
+      <main className={cn("flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300", !(activeTab === 'billing' && isFullscreen) ? "ml-[220px]" : "ml-0")}>
+        <Routes>
+          <Route path="/billing" element={<POS user={fakeUser} />} />
+          <Route path="/settings" element={<Settings user={fakeUser} onUpdateUser={() => {}} electronKeyMode onKeySet={handleKeySet} />} />
+          <Route path="*" element={<Navigate to="/billing" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
 
 function AppContent({ user, setUser, handleLogin, handleLogout }) {
   const navigate = useNavigate();
@@ -198,6 +271,10 @@ function AppContent({ user, setUser, handleLogin, handleLogout }) {
 }
 
 export default function App() {
+  const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
+  const Router = isElectron ? HashRouter : BrowserRouter;
+  const routerProps = isElectron ? {} : { basename: import.meta.env.DEV ? "/" : "/pos" };
+
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user')));
 
   const handleLogin = (userData) => {
@@ -212,13 +289,12 @@ export default function App() {
     localStorage.removeItem('refresh_token');
   };
 
-  const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('AtulPOS-Electron');
-  const Router = isElectron ? HashRouter : BrowserRouter;
-  const routerProps = isElectron ? {} : { basename: "/pos" };
-
   return (
     <Router {...routerProps}>
-       <AppContent user={user} setUser={setUser} handleLogin={handleLogin} handleLogout={handleLogout} />
+      {isElectron
+        ? <ElectronApp />
+        : <AppContent user={user} setUser={setUser} handleLogin={handleLogin} handleLogout={handleLogout} />
+      }
     </Router>
   );
 }

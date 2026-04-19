@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from .models import Order, OrderItem, Payment, OrderStatus
 from .serializers import OrderSerializer, OrderItemSerializer, PaymentSerializer
-from apps.core.permissions import IsCashier
+from apps.core.permissions import IsCashierOrPOSTerminal
+from apps.accounts.pos_auth import POSTerminalKeyAuthentication, POSTerminalUser
 from apps.core.utils import record_audit
 from decimal import Decimal
 import threading
@@ -13,12 +14,20 @@ import requests as http_requests
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.none()
     serializer_class = OrderSerializer
-    permission_classes = [IsCashier]
+    permission_classes = [IsCashierOrPOSTerminal]
+
+    def get_authenticators(self):
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        return [POSTerminalKeyAuthentication(), JWTAuthentication()]
 
     def get_queryset(self):
         user = self.request.user
         qs = Order.objects.all().prefetch_related('items', 'payments').order_by('-created_at')
-        
+
+        # POS Terminal key — filter by terminal's outlet
+        if isinstance(user, POSTerminalUser):
+            return qs.filter(outlet_id=user.outlet_id)
+
         # 1. User-based Filtering (Security)
         if user.role != 'superadmin':
             if user.outlet_id:
@@ -45,20 +54,118 @@ class OrderViewSet(viewsets.ModelViewSet):
         print("REQUEST DATA:", dict(request.data))
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            print("ORDER_CREATE_ERROR:", serializer.errors)
+            print("VALIDATION_ERROR:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+        try:
+            self.perform_create(serializer)
+            order = serializer.instance
+            
+            # Recalculate context for the receipt data
+            # Use serializer.data directly to avoid secondary DB queries during a heavy creation transaction
+            response_data = serializer.data
+            
+            # Build receipt data for immediate printing
+            receipt_data = self._get_receipt_data(order, serializer.data)
+            response_data['receipt'] = receipt_data
+            
+            headers = self.get_success_headers(serializer.data)
+            return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+        except Exception as e:
+            import traceback
+            print("ORDER_CREATE_CRASH:", str(e))
+            traceback.print_exc()
+            return Response({"error": f"Internal Server Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _get_receipt_data(self, order, order_serialized_data=None):
+        """Helper to build consistent receipt JSON. If serialized_data is provided, use it."""
+        from .serializers import OrderItemSerializer, PaymentSerializer
+        
+        context = {'request': self.request} if hasattr(self, 'request') else {}
+        
+        cgst = float(order.tax_amount / 2)
+        sgst = float(order.tax_amount / 2)
+        
+        # Use existing serialized items if available to avoid DB delay
+        if order_serialized_data and 'items' in order_serialized_data:
+            items_json = order_serialized_data['items']
+        else:
+            items_json = OrderItemSerializer(order.items.all(), many=True, context=context).data
+            
+        if order_serialized_data and 'payments' in order_serialized_data:
+            payments_json = order_serialized_data['payments']
+        else:
+            payments_json = PaymentSerializer(order.payments.all(), many=True, context=context).data
+
+        tax_summary = []
+        # Group items by tax rate for summary
+        summary_map = {}
+        for item in order.items.all():
+            rate = str(item.tax_rate)
+            if rate not in summary_map:
+                summary_map[rate] = {"taxable_value": Decimal('0.00'), "cgst": Decimal('0.00'), "sgst": Decimal('0.00')}
+            summary_map[rate]["taxable_value"] += item.item_subtotal
+            summary_map[rate]["cgst"] += item.item_tax / 2
+            summary_map[rate]["sgst"] += item.item_tax / 2
+        
+        for rate, vals in summary_map.items():
+            tax_summary.append({
+                "rate": rate, 
+                "taxable_value": float(vals["taxable_value"]),
+                "cgst": float(vals["cgst"]),
+                "sgst": float(vals["sgst"])
+            })
+
+        # Add unit_label to each item from variant_name
+        items_with_label = []
+        for item in items_json:
+            item_dict = dict(item)
+            item_dict['unit_label'] = item_dict.get('variant_name') or ''
+            items_with_label.append(item_dict)
+
+        return {
+            "outlet": {
+                "name": order.outlet.name,
+                "address": order.outlet.address or "",
+                "city": order.outlet.city or "",
+                "gstin": order.outlet.gstin or "",
+                "phone": order.outlet.phone or "",
+                "fssai": order.outlet.fssai_number or "",
+            },
+            "order_number": order.order_number,
+            "date": order.created_at.isoformat() if order.created_at else None,
+            "cashier": order.created_by.full_name if order.created_by else "System",
+            "order_type": order.order_type,
+            "customer_phone": order.customer.phone if order.customer else "",
+            "customer_name": order.customer.name if order.customer else "",
+            "items": items_with_label,
+            "totals": {
+                "subtotal": float(order.subtotal),
+                "cgst": cgst,
+                "sgst": sgst,
+                "total": float(order.total_amount),
+                "discount": float(order.discount_amount)
+            },
+            "tax_summary": tax_summary,
+            "payments": payments_json
+        }
 
     def perform_create(self, serializer):
-        order = serializer.save(created_by=self.request.user)
-        record_audit(
-            user=self.request.user,
-            action="ORDER_CREATE",
-            instance=order,
-            description=f"Order {order.order_number} created for {order.order_type}."
-        )
+        user = self.request.user
+        # POS terminal key — created_by is None (no real user)
+        created_by = None if isinstance(user, POSTerminalUser) else user
+        outlet = user.outlet if isinstance(user, POSTerminalUser) else None
+        save_kwargs = {'created_by': created_by}
+        if outlet:
+            save_kwargs['outlet'] = outlet
+        order = serializer.save(**save_kwargs)
+        if not isinstance(user, POSTerminalUser):
+            record_audit(
+                user=user,
+                action="ORDER_CREATE",
+                instance=order,
+                description=f"Order {order.order_number} created for {order.order_type}."
+            )
         # Auto-print: background thread mein chalao taaki response delay na ho
         threading.Thread(target=_trigger_auto_print, args=(order,), daemon=True).start()
 
@@ -208,28 +315,17 @@ def _trigger_auto_print(order: Order):
 
     @action(detail=False, methods=['post'], url_path='bulk-delete')
     def bulk_delete(self, request):
-        """Delete all orders (requires manager password)"""
-        from apps.accounts.models import User, UserRole
-        from django.contrib.auth import authenticate
-        password = request.data.get('password') or request.data.get('pin')
+        """Delete all orders for the outlet."""
+        from apps.accounts.models import UserRole
 
-        if not password:
-            return Response({"error": "Password required for bulk delete."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Authenticate using the requesting user's own credentials
-        authorizer = authenticate(username=request.user.email, password=password)
-
-        if not authorizer:
-            return Response({"error": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
-
+        user = request.user
         authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER]
-        if authorizer.role not in authorized_roles:
+        if user.role not in authorized_roles:
             return Response({"error": "Unauthorized role."}, status=status.HTTP_403_FORBIDDEN)
 
-        # To be safe, filter by outlet if not superadmin
         qs = Order.objects.all()
-        if authorizer.role != UserRole.SUPERADMIN:
-            qs = qs.filter(outlet_id=authorizer.outlet_id)
+        if user.role != UserRole.SUPERADMIN:
+            qs = qs.filter(outlet_id=user.outlet_id)
 
         count = qs.count()
         qs.delete()
@@ -237,7 +333,7 @@ def _trigger_auto_print(order: Order):
         record_audit(
             user=request.user,
             action="ORDERS_BULK_DELETE",
-            description=f"Bulk deleted {count} orders authorized by {authorizer.full_name}."
+            description=f"Bulk deleted {count} orders by {user.full_name}."
         )
 
         return Response({"message": f"Successfully deleted {count} orders."}, status=status.HTTP_200_OK)
@@ -290,41 +386,30 @@ def _trigger_auto_print(order: Order):
     @action(detail=True, methods=['post'], url_path='delete_order')
     def delete_order(self, request, pk=None):
         """Hard delete an order and renumber all subsequent orders of the same day."""
-        from apps.accounts.models import User, UserRole
+        from apps.accounts.models import UserRole
         from django.db import transaction as db_transaction
-        order = self.get_object_or_404(Order, pk=pk)
-        manager_pin = request.data.get('pin') or request.data.get('manager_pin')
 
-        if not manager_pin:
-            return Response({"error": "Manager PIN required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        from django.contrib.auth import authenticate as dj_auth
-        authorizer = dj_auth(username=request.user.email, password=manager_pin)
-        if not authorizer:
-            return Response({"error": "Incorrect password."}, status=status.HTTP_401_UNAUTHORIZED)
-
-        authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER]
-        if authorizer.role not in authorized_roles:
+        user = request.user
+        authorized_roles = [UserRole.SUPERADMIN, UserRole.CLIENT_ADMIN, UserRole.OUTLET_MANAGER, UserRole.CASHIER]
+        if user.role not in authorized_roles:
             return Response({"error": "Unauthorized role."}, status=status.HTTP_403_FORBIDDEN)
 
+        order = self.get_object_or_404(Order, pk=pk)
         order_number = order.order_number
-        outlet_id = order.outlet_id  # save before delete
-        # Parse date prefix and sequence from order number e.g. ORD-20260407-0002
+        outlet_id = order.outlet_id
+
         parts = order_number.split('-')  # ['ORD', '20260407', '0002']
         prefix = f"{parts[0]}-{parts[1]}"  # ORD-20260407
         deleted_seq = int(parts[2])
 
         with db_transaction.atomic():
-            # Hard delete the order first
             order.hard_delete()
 
-            # Get all orders of same day with seq > deleted, ordered ascending
             later_orders = Order.objects.filter(
                 outlet_id=outlet_id,
                 order_number__startswith=prefix,
             ).order_by('order_number')
 
-            # Renumber each: shift seq down by 1
             for o in later_orders:
                 seq = int(o.order_number.split('-')[-1])
                 if seq > deleted_seq:
@@ -334,7 +419,7 @@ def _trigger_auto_print(order: Order):
         record_audit(
             user=request.user,
             action="ORDER_DELETE",
-            description=f"Order {order_number} deleted by {authorizer.full_name}. Subsequent orders renumbered."
+            description=f"Order {order_number} deleted by {user.full_name}. Subsequent orders renumbered."
         )
         return Response({"message": f"Order {order_number} deleted and orders renumbered."}, status=status.HTTP_200_OK)
 
@@ -342,45 +427,11 @@ def _trigger_auto_print(order: Order):
     def receipt(self, request, pk=None):
         """Get receipt format"""
         from .utils.formatters import format_thermal_receipt
-        order = self.get_object_or_404(Order, pk=pk)
-        # Calculate GST Breakdown (usually 50/50 split for CGST/SGST within state)
-        cgst = order.tax_amount / 2
-        sgst = order.tax_amount / 2
+        order = self.get_object() # Use DRF standard lookup
+        data = self._get_receipt_data(order)
         
-        # Group items by tax rate for a tax summary table
-        tax_summary = {}
-        for item in order.items.all():
-            rate = str(item.tax_rate)
-            if rate not in tax_summary:
-                tax_summary[rate] = {"taxable_value": Decimal('0.00'), "cgst": Decimal('0.00'), "sgst": Decimal('0.00')}
-            tax_summary[rate]["taxable_value"] += item.item_subtotal
-            tax_summary[rate]["cgst"] += item.item_tax / 2
-            tax_summary[rate]["sgst"] += item.item_tax / 2
-
-        data = {
-            "outlet": {
-                "name": order.outlet.name,
-                "address": order.outlet.address,
-                "gstin": order.outlet.gstin,
-                "phone": order.outlet.phone
-            },
-            "order_number": order.order_number,
-            "date": order.created_at,
-            "cashier": order.created_by.full_name if order.created_by else "System",
-            "items": OrderItemSerializer(order.items.all(), many=True).data,
-            "totals": {
-                "subtotal": order.subtotal,
-                "cgst": cgst,
-                "sgst": sgst,
-                "total": order.total_amount,
-                "discount": order.discount_amount
-            },
-            "tax_summary": [
-                {"rate": rate, **values} for rate, values in tax_summary.items()
-            ],
-            "payments": PaymentSerializer(order.payments.all(), many=True).data,
-            "thermal_raw": format_thermal_receipt(order, order.outlet)
-        }
+        # Add thermal raw only for this dedicated endpoint if needed
+        data["thermal_raw"] = format_thermal_receipt(order, order.outlet)
         return Response(data)
 
     def get_object_or_404(self, model, pk):

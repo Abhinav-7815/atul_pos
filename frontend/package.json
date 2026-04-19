@@ -1,27 +1,35 @@
 {
-  "name": "frontend",
+  "name": "atul-pos",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Professional POS System for Atul Ice Cream",
+  "author": "Atul Ice Cream",
   "main": "main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "electron .",
+    "electron:dev": "node_modules/electron/dist/electron.exe .",
     "electron:build": "electron-builder"
   },
   "build": {
     "appId": "com.atulicecream.pos",
     "productName": "Atul Ice Cream POS",
     "directories": {
-      "output": "dist_electron"
+      "output": "dist_electron2"
     },
     "files": [
       "dist/**/*",
       "main.cjs",
-      "preload.cjs"
+      "preload.cjs",
+      "print_server.py"
+    ],
+    "extraResources": [
+      {
+        "from": "print_server_dist/print_server.exe",
+        "to": "print_server.exe"
+      }
     ],
     "win": {
       "target": [
