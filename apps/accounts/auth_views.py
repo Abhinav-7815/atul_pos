@@ -111,8 +111,7 @@ class POSKeyListCreateView(APIView):
         from apps.accounts.models import POSTerminalKey
         outlet = _get_outlet_for_user(request.user)
         if not outlet:
-            return Response({'success': True, 'data': []})
-        # Superadmin sees all keys; others see only their outlet
+            return Response([])
         if request.user.role == 'superadmin' or request.user.is_superuser:
             keys = POSTerminalKey.objects.all()
         else:
@@ -128,27 +127,27 @@ class POSKeyListCreateView(APIView):
             }
             for k in keys
         ]
-        return Response({'success': True, 'data': data})
+        return Response(data)
 
     def post(self, request):
         from apps.accounts.models import POSTerminalKey
         name = request.data.get('name', '').strip()
         outlet_id = request.data.get('outlet_id')
         if not name:
-            return Response({'success': False, 'error': 'Name required.'}, status=400)
+            return Response({'error': 'Name required.'}, status=400)
         if outlet_id:
             from apps.outlets.models import Outlet
             outlet = get_object_or_404(Outlet, pk=outlet_id)
         else:
             outlet = _get_outlet_for_user(request.user)
         if not outlet:
-            return Response({'success': False, 'error': 'No outlet found.'}, status=400)
+            return Response({'error': 'No outlet found.'}, status=400)
         key = POSTerminalKey.objects.create(
             name=name,
             outlet=outlet,
             created_by=request.user,
         )
-        return Response({'success': True, 'data': {'id': str(key.pk), 'key': str(key.key), 'name': key.name}}, status=201)
+        return Response({'id': str(key.pk), 'key': str(key.key), 'name': key.name, 'is_active': key.is_active}, status=201)
 
 
 class POSKeyDetailView(APIView):
@@ -164,11 +163,11 @@ class POSKeyDetailView(APIView):
     def delete(self, request, pk):
         key = self._get_key(request, pk)
         key.delete()
-        return Response({'success': True})
+        return Response(status=204)
 
     def patch(self, request, pk):
         key = self._get_key(request, pk)
         key.is_active = request.data.get('is_active', key.is_active)
         key.name = request.data.get('name', key.name)
         key.save()
-        return Response({'success': True, 'data': {'id': str(key.pk), 'key': str(key.key), 'name': key.name, 'is_active': key.is_active}})
+        return Response({'id': str(key.pk), 'key': str(key.key), 'name': key.name, 'is_active': key.is_active})

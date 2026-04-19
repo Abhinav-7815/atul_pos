@@ -192,7 +192,8 @@ export default function Settings({ user, onUpdateUser, electronKeyMode, onKeySet
     setUsersLoading(true);
     try {
       const res = await userApi.getUsers({});
-      setUsers(res.data?.data || res.data?.results || res.data || []);
+      const raw = res.data?.data ?? res.data?.results ?? res.data;
+      setUsers(Array.isArray(raw) ? raw : []);
     } catch { setUsers([]); }
     finally { setUsersLoading(false); }
   };
@@ -739,7 +740,8 @@ function POSKeysTab() {
     setLoading(true);
     try {
       const res = await posKeyApi.list();
-      setKeys(res.data?.data || res.data?.results || res.data || []);
+      const raw = res.data?.data ?? res.data;
+      setKeys(Array.isArray(raw) ? raw : []);
     } catch { setKeys([]); }
     finally { setLoading(false); }
   };
